@@ -1,0 +1,17 @@
+fleet:
+  name: toio
+  robots:
+    - cube_0
+    - cube_1
+
+toio:
+  speed_max_value: 20
+  speed_change_type: 3
+
+scale:
+  meters_per_mat_unit: 0.05
+  mat_origin_units: [98, 142]
+  mat_safe_rect_units: [138, 182, 362, 318]
+
+zenoh:
+  config_file: ../toio_free_fleet_rmf/config/zenoh/client_config.json5

@@ -1,0 +1,59 @@
+rmf_fleet:
+  name: "toio"
+  fleet_manager:
+    type: "free_fleet"
+    config:
+      transport: "zenoh"
+
+  limits:
+    linear:  [1.0, 2.0]
+    angular: [3.0, 5.0]
+
+  profile:
+    footprint: 1.25
+    vicinity:  2.50
+
+  reversible: True
+  battery_system:
+    voltage: 3.7
+    capacity: 0.26
+    charging_current: 0.3
+  mechanical_system:
+    mass: 0.05
+    moment_of_inertia: 0.00002
+    friction_coefficient: 0.20
+  ambient_system:
+    power: 0.1
+  tool_system:
+    power: 0.0
+
+  recharge_threshold: 0.10
+  recharge_soc: 0.95
+  publish_fleet_state: 2.0
+  account_for_battery_drain: True
+
+  task_capabilities:
+    loop: True
+    delivery: True
+    clean: False
+
+  robots:
+    cube_0:
+      charger: "charger_0"
+      responsive_wait: True
+    cube_1:
+      charger: "charger_1"
+      responsive_wait: True
+
+reference_coordinates:
+  toio:
+    rmf:
+      - [0.0,  0.0]
+      - [15.2, 0.0]
+      - [15.2, 10.8]
+      - [0.0,  10.8]
+    robot:
+      - [98,  142]
+      - [402, 142]
+      - [402, 358]
+      - [98,  358]

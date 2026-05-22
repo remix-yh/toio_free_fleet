@@ -1,0 +1,21 @@
+<?xml version="1.0"?>
+<launch>
+  <arg name="use_sim_time" default="false"/>
+  <arg name="nav_graph_file"
+       default="$(find-pkg-share toio_free_fleet_rmf)/maps/toio/nav_graphs/0.yaml"/>
+  <arg name="fleet_config_file"
+       default="$(find-pkg-share toio_free_fleet_rmf)/config/fleet/toio_config.yaml"/>
+  <arg name="zenoh_config_file"
+       default="$(find-pkg-share toio_free_fleet_rmf)/config/zenoh/client_config.json5"/>
+
+  <include file="$(find-pkg-share toio_free_fleet_rmf)/launch/include/common.launch.xml">
+    <arg name="use_sim_time" value="$(var use_sim_time)"/>
+  </include>
+
+  <node pkg="free_fleet_adapter" exec="fleet_adapter" name="toio_fleet_adapter" output="screen">
+    <param name="nav_graph_file" value="$(var nav_graph_file)"/>
+    <param name="config_file" value="$(var fleet_config_file)"/>
+    <param name="zenoh_config_file" value="$(var zenoh_config_file)"/>
+    <param name="use_sim_time" value="$(var use_sim_time)"/>
+  </node>
+</launch>

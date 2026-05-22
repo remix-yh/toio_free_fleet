@@ -1,0 +1,28 @@
+# traffic_editor 出力スタブ。実際の lane/vertex 編集は GUI で行うこと。
+#
+# 座標系メモ:
+#   - METERS_PER_MAT_UNIT = 0.05 (×50 スケール)
+#   - mat 左上 (98, 142) = RMF (0.0, 0.0)
+#   - mat 右下 (402, 358) = RMF (15.2, 10.8)
+#   - 走行可能な安全矩形: x ∈ [2.0, 13.2], y ∈ [2.0, 8.8] (m)
+#
+# 必要な編集:
+#   1. traffic_editor で本ファイルを開く
+#   2. 背景画像 toio.png をマット撮影画像に差し替え
+#   3. nav graph の waypoint と lane を安全矩形内に配置
+#   4. charger / parking 等のオプションも必要に応じて
+
+name: toio
+levels:
+  L1:
+    elevation: 0.0
+    drawing:
+      filename: toio.png
+    flattened_x_offset: 0.0
+    flattened_y_offset: 0.0
+    layers: {}
+    vertices: []
+    walls: []
+    lanes: []
+    floors: []
+lifts: {}

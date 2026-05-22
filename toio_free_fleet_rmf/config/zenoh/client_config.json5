@@ -1,0 +1,14 @@
+{
+  mode: "peer",
+  connect: {
+    endpoints: [],
+  },
+  listen: {
+    endpoints: ["tcp/0.0.0.0:7447"],
+  },
+  scouting: {
+    multicast: {
+      enabled: true,
+    },
+  },
+}
