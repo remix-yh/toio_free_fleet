@@ -1,0 +1,34 @@
+<?xml version="1.0"?>
+<!--
+Cube-side bring-up: zenohd router + zenoh-bridge-ros2dds + toio client.
+
+Run this on the host that has BLE access to the toio cubes. Pair it with
+`ros2 launch toio_free_fleet_rmf fleet_adapter.launch.xml` (typically with
+ROS_DOMAIN_ID=55 to isolate the RMF DDS domain from the cube side).
+-->
+<launch>
+  <arg name="client_config_file"
+       default="$(find-pkg-share toio_free_fleet_client)/config/client.yaml"
+       description="toio client.yaml with the per-cube fleet/cube_id/led mapping"/>
+  <arg name="zenoh_bridge_config_file"
+       default="$(find-pkg-share toio_free_fleet_rmf)/config/zenoh/toio_zenoh_bridge_ros2dds_client_config.json5"
+       description="JSON5 config for the DDS&lt;-&gt;zenoh bridge"/>
+  <arg name="zenoh_bridge_bin"
+       default="$(env HOME)/ff_ws/zenoh-bridge/zenoh-bridge-ros2dds"
+       description="Absolute path to the standalone zenoh-bridge-ros2dds binary"/>
+  <arg name="start_zenohd" default="true"
+       description="Set false if a zenohd router is already running elsewhere"/>
+
+  <executable cmd="zenohd"
+              name="zenohd"
+              output="log"
+              if="$(var start_zenohd)"/>
+
+  <executable cmd="$(var zenoh_bridge_bin) -c $(var zenoh_bridge_config_file)"
+              name="zenoh_bridge_ros2dds"
+              output="screen"/>
+
+  <node pkg="toio_free_fleet_client" exec="toio_free_fleet_client"
+        name="toio_free_fleet_client" output="screen"
+        args="-c $(var client_config_file)"/>
+</launch>

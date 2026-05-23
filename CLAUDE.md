@@ -26,15 +26,17 @@ toio_free_fleet/
 │   │   └── main.py             # rclpy entry (asyncio + rclpy executor)
 │   ├── config/client.yaml
 │   └── tests/
-└── toio_free_fleet_rmf/                          # ament_python (RMF アセット)
+└── toio_free_fleet_rmf/                          # ament_cmake (RMF アセット)
+    ├── CMakeLists.txt                            # nav_graph 生成を build 時に組み込み
     ├── config/fleet/toio_config.yaml             # navigation_stack: 2, reference_coordinates
     ├── config/zenoh/toio_zenoh_bridge_ros2dds_client_config.json5
-    ├── maps/toio/{toio_map.building.yaml, toio_map.png}
-    └── launch/
+    ├── maps/toio_map/{toio_map.building.yaml, toio_map.png}
+    └── launch/{cube_side.launch.xml, fleet_adapter.launch.xml, include/}
 ```
 
-`maps/toio/nav_graphs/` は traffic_editor 編集後に
-`ros2 run rmf_building_map_tools building_map_generator nav` で都度生成 (リポジトリには commit しない)。
+`maps/toio_map/nav_graphs/0.yaml` は `colcon build` するたびに
+`CMakeLists.txt` の `add_custom_command` が再生成する (free_fleet_examples と同じパターン)。
+リポジトリには commit しない。
 
 ## 不変の設計決定 (変える場合は議論してから)
 
@@ -80,7 +82,7 @@ toio コア キューブの BLE 仕様: <https://toio.github.io/toio-spec/>
   `hardware_position_id` 値から書き換える。スケールは据え置きで OK。
 - 速度感を変える: `client.yaml` の `toio.speed_max_value` と `toio_config.yaml` の `limits.linear`
   を一緒に動かす (1 速度値 ≈ 1 mm/s × scale)。
-- nav graph を編集: `traffic_editor` で `maps/toio/toio_map.building.yaml` を開いて編集。
+- nav graph を編集: `traffic_editor` で `maps/toio_map/toio_map.building.yaml` を開いて編集 → `colcon build --packages-select toio_free_fleet_rmf` で `nav_graphs/0.yaml` が再生成される。
 
 ## 何をしないか
 

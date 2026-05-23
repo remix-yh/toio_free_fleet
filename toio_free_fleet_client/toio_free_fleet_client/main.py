@@ -25,11 +25,13 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import sys
 import threading
 from pathlib import Path
 
 import rclpy
 from rclpy.executors import MultiThreadedExecutor
+from rclpy.utilities import remove_ros_args
 from toio import SpeedChangeType
 import yaml
 
@@ -93,7 +95,9 @@ def main() -> int:
         required=True,
         help='path to client.yaml',
     )
-    args = parser.parse_args()
+    # `ros2 launch` and `ros2 run` may append --ros-args / -r remap arguments
+    # before our parser sees them; strip those out so argparse doesn't fail.
+    args = parser.parse_args(remove_ros_args(sys.argv[1:]))
     with args.config.open('r') as f:
         cfg = yaml.safe_load(f)
 

@@ -130,9 +130,19 @@ class CubeManager:
                 robot.led_color
                 or _DEFAULT_LED_PALETTE[i % len(_DEFAULT_LED_PALETTE)]
             )
-            await self._cubes[i].api.indicator.turn_on(
-                IndicatorParam(duration_ms=0, color=Color(r=r, g=g, b=b))
-            )
+            # Some cube generations (e.g. local name "toio-XYZ" without
+            # "Core Cube-") don't expose the Light/Indicator characteristic.
+            # LED is only used for visual identification of cube_0 vs cube_1
+            # at startup, so a missing LED isn't fatal — log and continue.
+            try:
+                await self._cubes[i].api.indicator.turn_on(
+                    IndicatorParam(duration_ms=0, color=Color(r=r, g=g, b=b))
+                )
+            except Exception as e:
+                print(
+                    f'[{robot.name}] LED not available '
+                    f'({type(e).__name__}: {e}); continuing without indicator.'
+                )
             await self._cubes[i].api.id_information.register_notification_handler(
                 self._make_handler(robot.name)
             )

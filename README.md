@@ -6,8 +6,8 @@
 ## アーキテクチャ
 
 upstream の `Nav2RobotAdapter` を **改造なしで** 使う。本リポジトリの
-`toio_free_fleet_client` は cube ホスト上で ROS 2 ノードとして動き、
-Nav2 互換の topic / action を expose する:
+`toio_free_fleet_client` は ROS 2 ノードとして動き、Nav2 互換の topic / action を
+expose する:
 
 | ROS 2 リソース | 内容 |
 |---|---|
@@ -15,22 +15,22 @@ Nav2 互換の topic / action を expose する:
 | `/<cube>/battery_state` (BatteryState) | ダミー (100%) — toio は電池残量を BLE で取れるので将来差し替え |
 | `/<cube>/navigate_to_pose` (NavigateToPose action) | RMF メートルで届く目的地を `rmf_to_mat_xy` でマット単位に戻して `motor_control_target` に流す |
 
-`zenoh-bridge-ros2dds` が cube ホストと RMF ホストの間で DDS↔Zenoh 変換を担う。
-free_fleet 側で CDR エンコードを自前実装する必要はない。
+`zenoh-bridge-ros2dds` が DDS↔Zenoh 変換を担う。free_fleet 側で CDR エンコードを
+自前実装する必要はない。
+
+すべて同一ホストで動かせる。cube 側と RMF 側で `ROS_DOMAIN_ID` を分けるだけで
+上下が独立する:
 
 ```
-cube host (ROS 2 Jazzy + cyclonedds)
-├── toio_free_fleet_client (rclpy node, 1 プロセス N cube)
-│   ├── BLE → MultipleToioCoreCubes
-│   └── /<cube>/{tf, battery_state, navigate_to_pose}
-└── zenoh-bridge-ros2dds   (DDS → Zenoh)
-                  │
-                  │ Zenoh
-                  │
-RMF host (ROS 2 Jazzy + cyclonedds, ROS_DOMAIN_ID 違い)
-├── zenoh-bridge-ros2dds   (Zenoh → DDS)
-├── free_fleet_adapter (Nav2RobotAdapter × N)
-└── rmf_core / rmf_demos_tasks
+ROS 2 Jazzy + cyclonedds, BLE が触れるマシン
+├── ROS_DOMAIN_ID=0 (default)
+│   ├── toio_free_fleet_client      (rclpy node, BLE→ MultipleToioCoreCubes)
+│   │     /<cube>/{tf, battery_state, navigate_to_pose}
+│   ├── zenoh-bridge-ros2dds        (上記 DDS topics を Zenoh に橋渡し)
+│   └── zenohd                      (Zenoh router)
+└── ROS_DOMAIN_ID=55
+    ├── free_fleet_adapter          (Nav2RobotAdapter × N, Zenoh subscriber)
+    └── rmf_core / rmf_demos_tasks
 ```
 
 ## 動作環境
@@ -51,11 +51,11 @@ RMF host (ROS 2 Jazzy + cyclonedds, ROS_DOMAIN_ID 違い)
 `source ~/ff_ws/install/setup.bash` した状態で `ros2 pkg list | grep free_fleet` が
 3 パッケージ (`free_fleet`, `free_fleet_adapter`, `free_fleet_examples`) を返せば前提 OK。
 
-cube 側にも以下を入れる (Raspberry Pi 等別ホストの場合):
+BLE を使うために以下も必要:
 
 ```bash
-sudo apt install ros-jazzy-ros-base ros-jazzy-rmw-cyclonedds-cpp ros-jazzy-nav2-msgs
 pip3 install 'toio-py>=1.0' --break-system-packages
+sudo apt install -y bluez ros-jazzy-nav2-msgs
 ```
 
 ## Setup
@@ -111,59 +111,40 @@ fleet:
 
 `led_color` は省略可。指定 ID の cube が見つからなければ `RuntimeError` で停止する。
 
-### 3. nav graph の生成
+### 3. nav graph
 
-`maps/toio/toio_map.building.yaml` から RMF の nav_graph を生成する。`traffic_editor`
-で waypoint / lane を編集した後に毎回:
+`maps/toio_map/toio_map.building.yaml` から **build 時に自動生成** される (`CMakeLists.txt`
+の `add_custom_command` が `building_map_generator nav` を呼ぶ)。
+`traffic_editor` で waypoint / lane を編集したら:
 
 ```bash
-cd ~/ff_ws/install/toio_free_fleet_rmf/share/toio_free_fleet_rmf/maps/toio
-ros2 run rmf_building_map_tools building_map_generator nav \
-  toio_map.building.yaml ./
+cd ~/ff_ws
+colcon build --packages-select toio_free_fleet_rmf
+# install/toio_free_fleet_rmf/share/toio_free_fleet_rmf/maps/toio_map/nav_graphs/0.yaml
+# が更新される
 ```
-
-これで `nav_graphs/0.yaml` が生成される。
 
 > `toio_map.building.yaml` の vertex/lane を編集するときは `traffic_editor toio_map.building.yaml` を開く。
 
 ## 起動
 
-### cube ホスト側
+ターミナル 2 つで完了。cube 側と RMF 側で `ROS_DOMAIN_ID` を分けるのは
+upstream nav2 例と同じパターン。
 
-#### Terminal 1: zenoh-bridge-ros2dds (cube → RMF へブリッジ)
-
-```bash
-source ~/ff_ws/install/setup.bash
-export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
-
-cd PATH_TO_EXTRACTED_ZENOH_BRIDGE
-./zenoh-bridge-ros2dds -c \
-  $(ros2 pkg prefix toio_free_fleet_rmf)/share/toio_free_fleet_rmf/config/zenoh/toio_zenoh_bridge_ros2dds_client_config.json5
-```
-
-#### Terminal 2: toio クライアント
+### Terminal 1: cube 側 (zenohd + bridge + client)
 
 ```bash
 source ~/ff_ws/install/setup.bash
 export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 
-ros2 run toio_free_fleet_client toio_free_fleet_client \
-  -c $(ros2 pkg prefix toio_free_fleet_client)/share/toio_free_fleet_client/config/client.yaml
+ros2 launch toio_free_fleet_rmf cube_side.launch.xml
 ```
 
 各 cube の LED 色がコンフィグ通りに点灯すれば接続成功。
+zenoh-bridge-ros2dds のバイナリ位置を変えたい場合は
+`zenoh_bridge_bin:=<path>` を渡す。
 
-### RMF ホスト側
-
-`ROS_DOMAIN_ID` を分けて起動する。
-
-#### Terminal 3: zenoh router
-
-```bash
-zenohd
-```
-
-#### Terminal 4: RMF コア + fleet adapter
+### Terminal 2: RMF 側
 
 ```bash
 source ~/ff_ws/install/setup.bash
@@ -173,7 +154,7 @@ export ROS_DOMAIN_ID=55
 ros2 launch toio_free_fleet_rmf fleet_adapter.launch.xml
 ```
 
-#### Terminal 5: タスク投入
+### タスク投入 (同じくドメイン 55)
 
 ```bash
 source ~/ff_ws/install/setup.bash
@@ -192,7 +173,7 @@ ros2 run rmf_demos_tasks dispatch_patrol \
 | パス | 内容 | ビルド |
 |---|---|---|
 | `toio_free_fleet_client/` | rclpy ノード。BLE で N 台の cube を 1 プロセス管理し、Nav2 互換 topic / action を expose | ament_python |
-| `toio_free_fleet_rmf/` | RMF 側のマップ、fleet adapter 設定、zenoh-bridge 設定、launch | ament_python |
+| `toio_free_fleet_rmf/` | RMF 側のマップ、fleet adapter 設定、zenoh-bridge 設定、launch。nav_graph は build 時自動生成 | ament_cmake |
 
 ## 主要な設計決定
 
