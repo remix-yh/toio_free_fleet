@@ -17,7 +17,8 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass, field
+import time
+from dataclasses import dataclass
 from typing import Awaitable, Callable
 
 from toio import (
@@ -30,9 +31,27 @@ from toio.cube.api.id_information import (
     PositionId,
     PositionIdMissed,
 )
+from toio.scanner.ble import UniversalBleScanner
 
 
 PositionListener = Callable[[str, 'CubeState'], Awaitable[None]]
+
+# Default palette used when a robot has no led_color in config.
+_DEFAULT_LED_PALETTE: list[tuple[int, int, int]] = [
+    (0xFF, 0x00, 0x00),
+    (0x00, 0x00, 0xFF),
+    (0x00, 0xFF, 0x00),
+    (0xFF, 0xFF, 0x00),
+]
+
+
+@dataclass
+class RobotSpec:
+    """Static config for a single cube in the fleet."""
+
+    name: str
+    cube_id: str
+    led_color: tuple[int, int, int] | None = None
 
 
 @dataclass
@@ -52,22 +71,22 @@ class CubeManager:
     """Own the BLE connections for every cube in the fleet."""
 
     fleet_name: str
-    robot_names: list[str]
-    led_colors: list[tuple[int, int, int]] = field(default_factory=lambda: [
-        (0xFF, 0x00, 0x00),
-        (0x00, 0x00, 0xFF),
-        (0x00, 0xFF, 0x00),
-        (0xFF, 0xFF, 0x00),
-    ])
+    robots: list[RobotSpec]
+    scan_timeout_s: float = 10.0
 
     def __post_init__(self) -> None:
         """Initialize empty state slots for every robot name."""
         self._cubes_ctx: MultipleToioCoreCubes | None = None
         self._cubes = None
         self._states: dict[str, CubeState] = {
-            name: CubeState(name=name) for name in self.robot_names
+            r.name: CubeState(name=r.name) for r in self.robots
         }
         self._listeners: list[PositionListener] = []
+
+    @property
+    def robot_names(self) -> list[str]:
+        """Return the configured robot names in declaration order."""
+        return [r.name for r in self.robots]
 
     @property
     def states(self) -> dict[str, CubeState]:
@@ -84,16 +103,38 @@ class CubeManager:
         self._listeners.append(listener)
 
     async def __aenter__(self) -> 'CubeManager':
-        """Scan, connect, and prime every cube in the fleet."""
-        self._cubes_ctx = MultipleToioCoreCubes(cubes=len(self.robot_names))
+        """Scan for the configured cube IDs, connect, and prime each cube."""
+        wanted_ids = {r.cube_id for r in self.robots}
+        scanner = UniversalBleScanner()
+        infos = await scanner.scan_with_id(
+            cube_id=wanted_ids, timeout=self.scan_timeout_s
+        )
+
+        by_id = {self._extract_cube_id(info.name): info for info in infos}
+        missing = [r.cube_id for r in self.robots if r.cube_id not in by_id]
+        if missing:
+            raise RuntimeError(
+                f'cubes not found during BLE scan: {missing} '
+                f'(found: {sorted(by_id.keys())})'
+            )
+
+        # Reorder the CubeInfo list to match the robots declaration order so
+        # cubes[i] maps to robots[i] and LED/notification handlers line up.
+        ordered_infos = [by_id[r.cube_id] for r in self.robots]
+        names = [r.name for r in self.robots]
+
+        self._cubes_ctx = MultipleToioCoreCubes(cubes=ordered_infos, names=names)
         self._cubes = await self._cubes_ctx.__aenter__()
-        for i, name in enumerate(self.robot_names):
-            r, g, b = self.led_colors[i % len(self.led_colors)]
+        for i, robot in enumerate(self.robots):
+            r, g, b = (
+                robot.led_color
+                or _DEFAULT_LED_PALETTE[i % len(_DEFAULT_LED_PALETTE)]
+            )
             await self._cubes[i].api.indicator.turn_on(
                 IndicatorParam(duration_ms=0, color=Color(r=r, g=g, b=b))
             )
             await self._cubes[i].api.id_information.register_notification_handler(
-                self._make_handler(name)
+                self._make_handler(robot.name)
             )
         return self
 
@@ -107,15 +148,24 @@ class CubeManager:
         """Best-effort motor stop for every connected cube."""
         if self._cubes is None:
             return
-        for i, name in enumerate(self.robot_names):
+        for i, robot in enumerate(self.robots):
             try:
                 await self._cubes[i].api.motor.motor_control(left=0, right=0)
             except Exception as e:
-                print(f'[{name}] stop failed: {e}')
+                print(f'[{robot.name}] stop failed: {e}')
+
+    @staticmethod
+    def _extract_cube_id(local_name: str | None) -> str:
+        """Pull the trailing 3-char id out of a BLE local name."""
+        # toio cubes advertise as "toio Core Cube-XYZ" where XYZ is on the
+        # sticker. rsplit handles future name layouts that still end with "-id".
+        if not local_name:
+            return ''
+        return local_name.rsplit('-', 1)[-1]
 
     def _make_handler(self, name: str):
         """Build a Position ID notification handler bound to ``name``."""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
 
         def handler(payload: bytearray) -> None:
             info = IdInformation.is_my_data(payload)
@@ -127,7 +177,7 @@ class CubeManager:
                 state.on_mat = True
             elif isinstance(info, PositionIdMissed):
                 state.on_mat = False
-            state.last_update_ns = loop.time_ns() if hasattr(loop, 'time_ns') else 0
+            state.last_update_ns = time.time_ns()
             for listener in self._listeners:
-                asyncio.create_task(listener(name, state))
+                loop.create_task(listener(name, state))
         return handler

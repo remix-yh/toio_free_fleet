@@ -12,13 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""
-Drive a cube along a sequence of RMF waypoints.
-
-The first cut issues ``motor_control_target`` sequentially per waypoint.
-A future revision can collapse paths into a single ``motor_control_multiple_targets``
-call to save BLE bandwidth.
-"""
+"""Drive a cube along a sequence of RMF waypoints."""
 
 from __future__ import annotations
 
@@ -34,6 +28,11 @@ from toio import (
     Speed,
     SpeedChangeType,
     TargetPosition,
+)
+from toio.cube.api.motor import (
+    Motor,
+    MotorResponseCode,
+    ResponseMotorControlTarget,
 )
 
 from .transform import inside_safe_rect_mat, rmf_to_mat_xy, RmfPose
@@ -55,7 +54,10 @@ class NavConfig:
 
     speed_max_value: int = 20
     speed_change_type: SpeedChangeType = SpeedChangeType.AccelerationAndDeceleration
+    # toio motor_control_target's own timeout is in seconds (max 255).
     per_waypoint_timeout_s: int = 6
+    # Extra slack on top of the cube-side timeout before we give up locally.
+    response_grace_s: float = 2.0
 
 
 class Navigator:
@@ -74,10 +76,22 @@ class Navigator:
         return NavResult.COMPLETED
 
     async def _goto(self, cube, target: RmfPose) -> NavResult:
-        """Send a single ``motor_control_target`` command."""
+        """Send a target command and wait for the cube to report arrival."""
         mx, my = rmf_to_mat_xy(target.x, target.y)
         if not inside_safe_rect_mat(mx, my):
             return NavResult.INVALID
+
+        loop = asyncio.get_running_loop()
+        arrival: asyncio.Future[MotorResponseCode] = loop.create_future()
+
+        def on_motor_response(payload: bytearray) -> None:
+            # The motor characteristic emits several response types; only the
+            # target-control response carries the arrival code we care about.
+            info = Motor.is_my_data(payload)
+            if isinstance(info, ResponseMotorControlTarget) and not arrival.done():
+                arrival.set_result(info.response_code)
+
+        await cube.api.motor.register_notification_handler(on_motor_response)
         try:
             await cube.api.motor.motor_control_target(
                 timeout=self.config.per_waypoint_timeout_s,
@@ -94,6 +108,27 @@ class Navigator:
                     rotation_option=RotationOption.WithoutRotation,
                 ),
             )
+            try:
+                code = await asyncio.wait_for(
+                    arrival,
+                    timeout=self.config.per_waypoint_timeout_s + self.config.response_grace_s,
+                )
+            except asyncio.TimeoutError:
+                return NavResult.TIMEOUT
         except asyncio.CancelledError:
             return NavResult.PREEMPTED
-        return NavResult.COMPLETED
+        finally:
+            await cube.api.motor.unregister_notification_handler(on_motor_response)
+
+        return self._map_response_code(code)
+
+    @staticmethod
+    def _map_response_code(code: MotorResponseCode) -> NavResult:
+        """Translate a toio motor response code to a NavResult."""
+        if code in (MotorResponseCode.SUCCESS, MotorResponseCode.SUCCESS_WITH_OVERWRITE):
+            return NavResult.COMPLETED
+        if code == MotorResponseCode.ERROR_TIMEOUT:
+            return NavResult.TIMEOUT
+        if code == MotorResponseCode.ERROR_ID_MISSED:
+            return NavResult.OFF_MAT
+        return NavResult.INVALID

@@ -1,18 +1,16 @@
+# FLEET CONFIG =================================================================
+# Mirrors free_fleet_examples/config/fleet/nav2_unique_multi_tb3_simulation_fleet_config.yaml.
+# Per-robot `navigation_stack: 2` selects upstream Nav2RobotAdapter, which is
+# what the toio_free_fleet_client speaks (via the zenoh-bridge-ros2dds bridge).
+
 rmf_fleet:
   name: "toio"
-  fleet_manager:
-    type: "free_fleet"
-    config:
-      transport: "zenoh"
-
   limits:
-    linear:  [1.0, 2.0]
-    angular: [3.0, 5.0]
-
+    linear: [1.0, 2.0]    # velocity, acceleration (m/s, m/s^2)
+    angular: [3.0, 5.0]   # velocity, acceleration (rad/s, rad/s^2)
   profile:
-    footprint: 1.25
+    footprint: 1.25       # radius in m (cube body 31.8 mm * 50 = 1.59 m; rounded down)
     vicinity:  2.50
-
   reversible: True
   battery_system:
     voltage: 3.7
@@ -26,34 +24,56 @@ rmf_fleet:
     power: 0.1
   tool_system:
     power: 0.0
-
   recharge_threshold: 0.10
   recharge_soc: 0.95
   publish_fleet_state: 2.0
   account_for_battery_drain: True
-
   task_capabilities:
     loop: True
     delivery: True
-    clean: False
-
+  finishing_request: "nothing"
+  responsive_wait: True
   robots:
     cube_0:
-      charger: "charger_0"
-      responsive_wait: True
+      charger: "cube_0_charger"
+      responsive_wait: False
+      navigation_stack: 2
+      init_timeout_sec: 10
+      initial_map: "L1"
+      map_frame: "map"
+      robot_frame: "base_footprint"
+      maps:
+        L1:
+          # TODO: replace with the nav2 map.yaml exported from traffic_editor
+          # (see `building_map_generator nav` in the README).
+          map_url: ""
     cube_1:
-      charger: "charger_1"
-      responsive_wait: True
+      charger: "cube_1_charger"
+      responsive_wait: False
+      navigation_stack: 2
+      init_timeout_sec: 10
+      initial_map: "L1"
+      map_frame: "map"
+      robot_frame: "base_footprint"
+      maps:
+        L1:
+          map_url: ""
+
+  robot_state_update_frequency: 10.0
+
+
+# TRANSFORM CONFIG =============================================================
+# Keyed by *map level name* (matches `levels:` in toio.building.yaml). The 4
+# points are the mat corners in mat-units (robot side) and the corresponding
+# RMF map meters (rmf side). Y is not flipped — see CLAUDE.md design table.
 
 reference_coordinates:
-  toio:
-    rmf:
-      - [0.0,  0.0]
-      - [15.2, 0.0]
-      - [15.2, 10.8]
-      - [0.0,  10.8]
-    robot:
-      - [98,  142]
-      - [402, 142]
-      - [402, 358]
-      - [98,  358]
+  L1:
+    rmf: [[0.0,  0.0],
+          [15.2, 0.0],
+          [15.2, 10.8],
+          [0.0,  10.8]]
+    robot: [[98,  142],
+            [402, 142],
+            [402, 358],
+            [98,  358]]

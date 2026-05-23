@@ -17,24 +17,24 @@
 
 ```
 toio_free_fleet/
-├── toio_free_fleet_client/      # pip パッケージ (ROS 不要)
+├── toio_free_fleet_client/                       # ament_python (ROS 2 ノード)
 │   ├── toio_free_fleet_client/
-│   │   ├── transform.py         # mat 座標 ↔ RMF map 座標 (m)
-│   │   ├── cube_manager.py      # BLE 接続管理 (1 プロセス N 台)
-│   │   ├── navigator.py         # waypoint 追従 (motor_control_target)
-│   │   ├── zenoh_bridge.py      # free_fleet Zenoh メッセージ pub/sub
-│   │   └── main.py              # CLI entry
+│   │   ├── transform.py        # mat 座標 ↔ RMF map 座標 (m)
+│   │   ├── cube_manager.py     # BLE 接続管理 (1 プロセス N 台)
+│   │   ├── navigator.py        # waypoint 追従 (motor_control_target + 完了通知待ち)
+│   │   ├── ros_adapter.py      # Nav2 互換 topic/action の expose
+│   │   └── main.py             # rclpy entry (asyncio + rclpy executor)
 │   ├── config/client.yaml
 │   └── tests/
-└── toio_free_fleet_rmf/         # ament_python パッケージ
-    ├── config/fleet/toio_config.yaml  # vehicle_traits, reference_coordinates
-    ├── config/zenoh/client_config.json5
+└── toio_free_fleet_rmf/                          # ament_python (RMF アセット)
+    ├── config/fleet/toio_config.yaml             # navigation_stack: 2, reference_coordinates
+    ├── config/zenoh/toio_zenoh_bridge_ros2dds_client_config.json5
     ├── maps/toio/{toio.building.yaml, toio.png}
     └── launch/
 ```
 
-`maps/toio/` 配下に `nav_graphs/` サブディレクトリは置かない (free_fleet_examples 準拠)。
-nav graph は building.yaml から build 時に生成される。
+`maps/toio/nav_graphs/` は traffic_editor 編集後に
+`ros2 run rmf_building_map_tools building_map_generator nav` で都度生成 (リポジトリには commit しない)。
 
 ## 不変の設計決定 (変える場合は議論してから)
 
@@ -44,7 +44,9 @@ nav graph は building.yaml から build 時に生成される。
 | 原点 | マット左上 = RMF (0, 0) | `reference_coordinates` の 4 点が矩形の 4 隅と一致 |
 | Y 軸 | 反転しない (Y-down) | traffic_editor 画面と一致、変換コードがほぼ id |
 | 1 プロセス N 台 | `MultipleToioCoreCubes` を 1 つ | PC の BLE セントラルが 1 つしかないため |
+| cube ID で名指し | `cube_id` (BLE local name 末尾 3 文字) を `client.yaml` に書く | スキャン順任せだと再起動でロボットが入れ替わる |
 | 速度系 | toio 公式仕様から導出 | 環境ごとのキャリブを排除 |
+| Nav2 互換 facade | client が `<name>/tf`, `<name>/battery_state`, `<name>/navigate_to_pose` action を expose | upstream `Nav2RobotAdapter` を fork せずに使うため |
 
 スケール定数は `transform.py` (client 側) と `toio_config.yaml` の `reference_coordinates` (RMF 側)
 の 2 箇所に書かれる意図的な冗長性がある。値を変える場合は両方を必ず同時に更新すること。
@@ -62,7 +64,8 @@ toio コア キューブの BLE 仕様: <https://toio.github.io/toio-spec/>
 
 - コメントは「なぜ」を書く。何をしているかは識別子で表現する。
 - `transform.py` の定数は spec / 設計決定由来。変更時は CLAUDE.md と README の表も更新。
-- `client` 側に ROS 依存は持ち込まない (Raspberry Pi に pip だけで入れられる状態を維持する)。
+- `client` の BLE 側 (cube_manager / navigator / transform) は ROS 依存禁止。
+  ROS 連携は `ros_adapter.py` と `main.py` にのみ集約する (テスト容易性のため)。
 
 ## よくある作業
 
@@ -74,6 +77,5 @@ toio コア キューブの BLE 仕様: <https://toio.github.io/toio-spec/>
 
 ## 何をしないか
 
-- `docs/`、`.github/`、`CONTRIBUTING.md`、Docker 関連ファイルは追加しない。
 - マットの物理 cm をそのまま RMF の m として使わない (×50 スケールを通す)。
 - cube ごとに別プロセスを立てない (BLE 競合する)。

@@ -1,0 +1,29 @@
+// zenoh-bridge-ros2dds config to run *alongside* toio_free_fleet_client on the
+// cube host. Bridges the per-robot tf, battery_state and navigate_to_pose
+// action up to the zenoh router, which the RMF host's free_fleet_adapter
+// reads from.
+//
+// Topology mirrors nav2_unique_multi_tb3 from free_fleet_examples — robots
+// live in their own namespaces and the regex matches the trailing topic name.
+{
+  plugins: {
+    ros2dds: {
+      allow: {
+        publishers: [".*/tf", ".*/battery_state"],
+        subscribers: [],
+        service_servers: [],
+        service_clients: [],
+        action_servers: [".*/navigate_to_pose"],
+        action_clients: [],
+      },
+      pub_max_frequencies: [".*/battery_state=1"],
+    },
+  },
+  mode: "client",
+  connect: {
+    endpoints: []
+  },
+  listen: {
+    endpoints: []
+  },
+}

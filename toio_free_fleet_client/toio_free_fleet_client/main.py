@@ -12,49 +12,81 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Command-line entry point for the toio_free_fleet_client process."""
+"""
+Entry point for the toio_free_fleet_client ROS 2 node.
+
+Layout:
+* The main thread runs an asyncio loop that owns every BLE connection.
+* A worker thread runs the rclpy multi-threaded executor so action callbacks
+  can hand work to the asyncio loop without blocking ROS callbacks.
+"""
 
 from __future__ import annotations
 
 import argparse
 import asyncio
+import threading
 from pathlib import Path
 
+import rclpy
+from rclpy.executors import MultiThreadedExecutor
+from toio import SpeedChangeType
 import yaml
-import zenoh
 
-from .cube_manager import CubeManager
+from .cube_manager import CubeManager, RobotSpec
 from .navigator import NavConfig, Navigator
-from .zenoh_bridge import ZenohBridge
+from .ros_adapter import ToioFleetNode
 
 
-async def run(config: dict) -> int:
-    """Run the client loop until cancelled."""
-    fleet_name: str = config['fleet']['name']
-    robot_names: list[str] = config['fleet']['robots']
+def _parse_robots(robots_cfg: list[dict]) -> list[RobotSpec]:
+    """Convert the ``fleet.robots`` block from YAML into RobotSpec objects."""
+    specs: list[RobotSpec] = []
+    for entry in robots_cfg:
+        led = entry.get('led_color')
+        specs.append(RobotSpec(
+            name=entry['name'],
+            cube_id=entry['cube_id'],
+            led_color=tuple(led) if led is not None else None,
+        ))
+    return specs
 
-    nav_cfg = NavConfig(
-        speed_max_value=int(config['toio']['speed_max_value']),
+
+def _parse_nav_config(toio_cfg: dict) -> NavConfig:
+    """Build a NavConfig from the ``toio:`` block in YAML."""
+    speed_max = int(toio_cfg.get('speed_max_value', NavConfig.speed_max_value))
+    speed_change_raw = toio_cfg.get('speed_change_type')
+    speed_change = (
+        SpeedChangeType(int(speed_change_raw))
+        if speed_change_raw is not None
+        else NavConfig.speed_change_type
     )
+    return NavConfig(speed_max_value=speed_max, speed_change_type=speed_change)
 
-    zenoh_cfg = zenoh.Config()
-    if 'zenoh' in config and 'config_file' in config['zenoh']:
-        zenoh_cfg = zenoh.Config.from_file(str(config['zenoh']['config_file']))
 
-    async with CubeManager(fleet_name=fleet_name, robot_names=robot_names) as manager:
-        navigator = Navigator(nav_cfg)
-        async with ZenohBridge(fleet_name, manager, navigator, zenoh_cfg):
-            print(f'[{fleet_name}] connected {len(robot_names)} cube(s). Ctrl+C to stop.')
-            try:
-                await asyncio.Event().wait()
-            except (KeyboardInterrupt, asyncio.CancelledError):
-                pass
-    return 0
+async def _ble_main(
+    fleet_name: str,
+    robots: list[RobotSpec],
+    nav_cfg: NavConfig,
+    map_frame: str,
+    robot_frame: str,
+    ready: asyncio.Event,
+    shutdown: asyncio.Event,
+    out: dict,
+) -> None:
+    """Hold every BLE connection open until ``shutdown`` is set."""
+    async with CubeManager(fleet_name=fleet_name, robots=robots) as manager:
+        out['manager'] = manager
+        out['navigator'] = Navigator(nav_cfg)
+        out['loop'] = asyncio.get_running_loop()
+        out['map_frame'] = map_frame
+        out['robot_frame'] = robot_frame
+        ready.set()
+        await shutdown.wait()
 
 
 def main() -> int:
-    """Parse CLI args and dispatch to the async loop."""
-    parser = argparse.ArgumentParser(prog='toio-free-fleet-client')
+    """Parse CLI args and start both the asyncio and rclpy event loops."""
+    parser = argparse.ArgumentParser(prog='toio_free_fleet_client')
     parser.add_argument(
         '-c', '--config',
         type=Path,
@@ -64,7 +96,65 @@ def main() -> int:
     args = parser.parse_args()
     with args.config.open('r') as f:
         cfg = yaml.safe_load(f)
-    return asyncio.run(run(cfg))
+
+    fleet_name: str = cfg['fleet']['name']
+    robots = _parse_robots(cfg['fleet']['robots'])
+    nav_cfg = _parse_nav_config(cfg.get('toio', {}))
+    frames = cfg.get('frames', {})
+    map_frame = frames.get('map', 'map')
+    robot_frame = frames.get('robot', 'base_footprint')
+
+    rclpy.init()
+
+    # BLE loop runs on the main thread; we own its event loop explicitly so
+    # rclpy callbacks (on a worker thread) can post coroutines back to it.
+    asyncio_loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(asyncio_loop)
+
+    ready = asyncio.Event()
+    shutdown = asyncio.Event()
+    shared: dict = {}
+
+    ble_task = asyncio_loop.create_task(
+        _ble_main(fleet_name, robots, nav_cfg, map_frame, robot_frame,
+                  ready, shutdown, shared)
+    )
+
+    # Run the asyncio loop in a background thread so we can spin rclpy here.
+    def _run_loop() -> None:
+        try:
+            asyncio_loop.run_until_complete(ble_task)
+        except asyncio.CancelledError:
+            pass
+
+    loop_thread = threading.Thread(target=_run_loop, name='ble-loop', daemon=False)
+    loop_thread.start()
+
+    # Wait for the BLE side to finish connecting before we expose ROS topics.
+    fut = asyncio.run_coroutine_threadsafe(ready.wait(), asyncio_loop)
+    fut.result()
+
+    node = ToioFleetNode(
+        fleet_name=fleet_name,
+        manager=shared['manager'],
+        navigator=shared['navigator'],
+        asyncio_loop=shared['loop'],
+        map_frame=shared['map_frame'],
+        robot_frame=shared['robot_frame'],
+    )
+    executor = MultiThreadedExecutor()
+    executor.add_node(node)
+
+    try:
+        executor.spin()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        node.destroy_node()
+        rclpy.shutdown()
+        asyncio_loop.call_soon_threadsafe(shutdown.set)
+        loop_thread.join(timeout=5.0)
+    return 0
 
 
 if __name__ == '__main__':
