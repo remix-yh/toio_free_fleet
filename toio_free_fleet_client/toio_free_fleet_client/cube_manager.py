@@ -110,17 +110,27 @@ class CubeManager:
             cube_id=wanted_ids, timeout=self.scan_timeout_s
         )
 
-        by_id = {self._extract_cube_id(info.name): info for info in infos}
-        missing = [r.cube_id for r in self.robots if r.cube_id not in by_id]
-        if missing:
-            raise RuntimeError(
-                f'cubes not found during BLE scan: {missing} '
-                f'(found: {sorted(by_id.keys())})'
+        # Match each configured cube_id back to a CubeInfo by substring lookup
+        # on the BLE local name. Stripping off the prefix (rsplit on "-") is
+        # not reliable: different firmware generations advertise as
+        #   "toio Core Cube-N7D", "toio-N7D", or even "toio Core Cube-N7D (...)".
+        # The configured id (e.g. "N7D") appears as a substring in all of them.
+        ordered_infos = []
+        used = set()
+        for r in self.robots:
+            match = next(
+                (info for info in infos
+                 if id(info) not in used and r.cube_id in (info.name or '')),
+                None,
             )
-
-        # Reorder the CubeInfo list to match the robots declaration order so
-        # cubes[i] maps to robots[i] and LED/notification handlers line up.
-        ordered_infos = [by_id[r.cube_id] for r in self.robots]
+            if match is None:
+                found = sorted(info.name or '?' for info in infos)
+                raise RuntimeError(
+                    f'cube not found during BLE scan: {r.cube_id} '
+                    f'(found cubes: {found})'
+                )
+            ordered_infos.append(match)
+            used.add(id(match))
         names = [r.name for r in self.robots]
 
         self._cubes_ctx = MultipleToioCoreCubes(cubes=ordered_infos, names=names)
@@ -163,15 +173,6 @@ class CubeManager:
                 await self._cubes[i].api.motor.motor_control(left=0, right=0)
             except Exception as e:
                 print(f'[{robot.name}] stop failed: {e}')
-
-    @staticmethod
-    def _extract_cube_id(local_name: str | None) -> str:
-        """Pull the trailing 3-char id out of a BLE local name."""
-        # toio cubes advertise as "toio Core Cube-XYZ" where XYZ is on the
-        # sticker. rsplit handles future name layouts that still end with "-id".
-        if not local_name:
-            return ''
-        return local_name.rsplit('-', 1)[-1]
 
     def _make_handler(self, name: str):
         """Build a Position ID notification handler bound to ``name``."""
