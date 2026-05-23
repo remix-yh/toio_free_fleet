@@ -28,7 +28,10 @@ import math
 
 METERS_PER_MAT_UNIT: float = 0.05
 MAT_ORIGIN_UNITS: tuple[int, int] = (98, 142)
-MAT_SAFE_RECT_UNITS: tuple[int, int, int, int] = (138, 182, 362, 318)
+# Mat bounds in mat units (left, top, right, bottom) for TMD01SS. PositionId
+# only returns valid coordinates inside this rectangle; targets outside are
+# rejected because the cube cannot localize there.
+MAT_BOUNDS_UNITS: tuple[int, int, int, int] = (98, 142, 402, 358)
 
 
 @dataclass(frozen=True)
@@ -42,7 +45,7 @@ class MatPose:
 
 @dataclass(frozen=True)
 class RmfPose:
-    """Pose expressed in the RMF map frame (meters and radians)."""
+    """Pose expressed in the cube's RMF-meter frame (mat top-left = 0, 0)."""
 
     x: float
     y: float
@@ -88,7 +91,7 @@ def rmf_to_mat(pose: RmfPose) -> MatPose:
     return MatPose(x=mx, y=my, angle_deg=rmf_yaw_to_mat_angle(pose.yaw_rad))
 
 
-def inside_safe_rect_mat(mat_x: int, mat_y: int) -> bool:
-    """Return True if (mat_x, mat_y) lies inside the configured safe rect."""
-    x0, y0, x1, y1 = MAT_SAFE_RECT_UNITS
+def inside_mat(mat_x: int, mat_y: int) -> bool:
+    """Return True if (mat_x, mat_y) lies on the mat's PositionId-readable area."""
+    x0, y0, x1, y1 = MAT_BOUNDS_UNITS
     return x0 <= mat_x <= x1 and y0 <= mat_y <= y1

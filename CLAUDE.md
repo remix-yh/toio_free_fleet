@@ -29,7 +29,7 @@ toio_free_fleet/
 └── toio_free_fleet_rmf/                          # ament_python (RMF アセット)
     ├── config/fleet/toio_config.yaml             # navigation_stack: 2, reference_coordinates
     ├── config/zenoh/toio_zenoh_bridge_ros2dds_client_config.json5
-    ├── maps/toio/{toio.building.yaml, toio.png}
+    ├── maps/toio/{toio_map.building.yaml, toio_map.png}
     └── launch/
 ```
 
@@ -47,9 +47,16 @@ toio_free_fleet/
 | cube ID で名指し | `cube_id` (BLE local name 末尾 3 文字) を `client.yaml` に書く | スキャン順任せだと再起動でロボットが入れ替わる |
 | 速度系 | toio 公式仕様から導出 | 環境ごとのキャリブを排除 |
 | Nav2 互換 facade | client が `<name>/tf`, `<name>/battery_state`, `<name>/navigate_to_pose` action を expose | upstream `Nav2RobotAdapter` を fork せずに使うため |
+| TF はマット左上=原点の RMF メートルで publish | スケール (×50) は client で適用、`reference_coordinates` は画像オフセット吸収のみ | mat unit を TF に流すと貯まる単位の不整合を避けるため |
 
-スケール定数は `transform.py` (client 側) と `toio_config.yaml` の `reference_coordinates` (RMF 側)
-の 2 箇所に書かれる意図的な冗長性がある。値を変える場合は両方を必ず同時に更新すること。
+スケール定数 `METERS_PER_MAT_UNIT = 0.05` は `transform.py` で `mat_to_rmf_xy` /
+`rmf_to_mat_xy` に直接使われ、TF publish と goal 受信時の変換に runtime で効く。
+`toio_config.yaml` の `reference_coordinates.robot` は client が publish する
+TF と同じ frame (マット左上=原点 RMF メートル) で、4 点はマット物理サイズの
+4 隅 (0,0)/(15.2,0)/(0,10.8)/(15.2,10.8) を素直に書く。`rmf` 側は traffic_editor
+上の placement (画像凡例によるオフセット等) を反映するため別 frame。
+スケールを変える場合は `transform.py` の定数と `reference_coordinates.robot` の
+4 点を必ず一緒に更新する (yaml だけ変えても client は知らない)。
 
 ## 仕様参照
 
@@ -73,7 +80,7 @@ toio コア キューブの BLE 仕様: <https://toio.github.io/toio-spec/>
   `hardware_position_id` 値から書き換える。スケールは据え置きで OK。
 - 速度感を変える: `client.yaml` の `toio.speed_max_value` と `toio_config.yaml` の `limits.linear`
   を一緒に動かす (1 速度値 ≈ 1 mm/s × scale)。
-- nav graph を編集: `traffic_editor` で `maps/toio/toio.building.yaml` を開いて編集。
+- nav graph を編集: `traffic_editor` で `maps/toio/toio_map.building.yaml` を開いて編集。
 
 ## 何をしないか
 

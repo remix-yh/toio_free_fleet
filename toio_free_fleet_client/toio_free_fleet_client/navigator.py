@@ -35,7 +35,7 @@ from toio.cube.api.motor import (
     ResponseMotorControlTarget,
 )
 
-from .transform import inside_safe_rect_mat, rmf_to_mat_xy, RmfPose
+from .transform import inside_mat, rmf_to_mat_xy, RmfPose
 
 
 class NavResult(Enum):
@@ -77,8 +77,10 @@ class Navigator:
 
     async def _goto(self, cube, target: RmfPose) -> NavResult:
         """Send a target command and wait for the cube to report arrival."""
+        # `target` is in the cube's RMF-meter frame (mat top-left = 0,0).
+        # Convert back to mat units for motor_control_target.
         mx, my = rmf_to_mat_xy(target.x, target.y)
-        if not inside_safe_rect_mat(mx, my):
+        if not inside_mat(mx, my):
             return NavResult.INVALID
 
         loop = asyncio.get_running_loop()

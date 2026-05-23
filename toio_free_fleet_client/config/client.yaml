@@ -4,10 +4,10 @@ fleet:
     # cube_id は cube 底面シール末尾 3 文字 (BLE local name "toio Core Cube-XYZ" の XYZ)。
     # 確認方法は README の "cube ID の確認" を参照。
     - name: cube_0
-      cube_id: H7p
+      cube_id: N7D
       led_color: [0xFF, 0x00, 0x00]
     - name: cube_1
-      cube_id: j3F
+      cube_id: n0Q
       led_color: [0x00, 0x00, 0xFF]
 
 toio:

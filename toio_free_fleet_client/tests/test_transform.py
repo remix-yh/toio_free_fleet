@@ -17,9 +17,9 @@
 import math
 
 from toio_free_fleet_client.transform import (
-    inside_safe_rect_mat,
+    inside_mat,
+    MAT_BOUNDS_UNITS,
     MAT_ORIGIN_UNITS,
-    MAT_SAFE_RECT_UNITS,
     mat_to_rmf,
     mat_to_rmf_xy,
     MatPose,
@@ -41,13 +41,13 @@ def test_bottom_right_corner():
     assert math.isclose(y, 10.8, abs_tol=1e-9)
 
 
-def test_safe_rect_corners_in_rmf_meters():
-    """Safe rect corners map to clean meter values."""
-    x0, y0, x1, y1 = MAT_SAFE_RECT_UNITS
-    assert mat_to_rmf_xy(x0, y0) == (2.0, 2.0)
+def test_mat_bounds_in_rmf_meters():
+    """Mat corners map to clean meter values at the full mat bounds."""
+    x0, y0, x1, y1 = MAT_BOUNDS_UNITS
+    assert mat_to_rmf_xy(x0, y0) == (0.0, 0.0)
     rx, ry = mat_to_rmf_xy(x1, y1)
-    assert math.isclose(rx, 13.2, abs_tol=1e-9)
-    assert math.isclose(ry, 8.8, abs_tol=1e-9)
+    assert math.isclose(rx, 15.2, abs_tol=1e-9)
+    assert math.isclose(ry, 10.8, abs_tol=1e-9)
 
 
 def test_round_trip_xy():
@@ -57,10 +57,13 @@ def test_round_trip_xy():
         assert rmf_to_mat_xy(rx, ry) == (mx, my)
 
 
-def test_inside_safe_rect():
-    """The configured rect excludes points outside its bounds."""
-    assert inside_safe_rect_mat(250, 250)
-    assert not inside_safe_rect_mat(100, 100)
+def test_inside_mat():
+    """Points on the mat pass the bounds check; points outside fail."""
+    assert inside_mat(250, 250)
+    assert inside_mat(98, 142)
+    assert inside_mat(402, 358)
+    assert not inside_mat(50, 100)
+    assert not inside_mat(500, 400)
 
 
 def test_pose_conversion_angle():

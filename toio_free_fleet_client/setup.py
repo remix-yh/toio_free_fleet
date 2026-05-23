@@ -37,6 +37,7 @@ setup(
     entry_points={
         'console_scripts': [
             'toio_free_fleet_client = toio_free_fleet_client.main:main',
+            'scan_cubes = toio_free_fleet_client.scan_cubes:main',
         ],
     },
 )

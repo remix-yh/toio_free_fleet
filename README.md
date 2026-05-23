@@ -11,9 +11,9 @@ Nav2 互換の topic / action を expose する:
 
 | ROS 2 リソース | 内容 |
 |---|---|
-| `/<cube>/tf` (TFMessage)            | mat → RMF 座標変換で得た cube の姿勢 |
+| `/<cube>/tf` (TFMessage)            | mat→RMF 変換後の cube 姿勢 (マット左上=原点の RMF メートル) |
 | `/<cube>/battery_state` (BatteryState) | ダミー (100%) — toio は電池残量を BLE で取れるので将来差し替え |
-| `/<cube>/navigate_to_pose` (NavigateToPose action) | RMF から来た目的地を BLE 経由で `motor_control_target` に流す |
+| `/<cube>/navigate_to_pose` (NavigateToPose action) | RMF メートルで届く目的地を `rmf_to_mat_xy` でマット単位に戻して `motor_control_target` に流す |
 
 `zenoh-bridge-ros2dds` が cube ホストと RMF ホストの間で DDS↔Zenoh 変換を担う。
 free_fleet 側で CDR エンコードを自前実装する必要はない。
@@ -76,15 +76,22 @@ source ~/ff_ws/install/setup.bash
 ### 2. cube ID の確認と `client.yaml` への登録
 
 物理 cube と論理名 (`cube_0`, `cube_1`, ...) のマッピングを固定しないと、
-起動するたびにロボットの役割が入れ替わる。BLE で取得できる **cube ID (末尾 3 文字)**
-で cube を指名する。
+起動するたびにロボットの役割が入れ替わる。BLE local name の末尾 3 文字
+(例: `H7p`) を **cube ID** として `client.yaml` に書く。
 
-ID は cube 底面のシールに書かれている (例: `H7p`)。`bluetoothctl` でも確認できる:
+cube 底面シールには ID が直接印字されていない世代もあるので、**BLE スキャンで確認**:
 
 ```bash
+# 推奨: 同梱の scan_cubes (cube を 1 台ずつ電源 ON にして個別特定するのに便利)
+source ~/ff_ws/install/setup.bash
+ros2 run toio_free_fleet_client scan_cubes
+# found 2 cube(s):
+#   cube_id=H7p   local_name=toio Core Cube-H7p
+#   cube_id=j3F   local_name=toio Core Cube-j3F
+
+# 代替: bluetoothctl でも見える
 bluetoothctl scan on
 # ... [NEW] Device XX:XX:XX:XX:XX:XX toio Core Cube-H7p
-#         [NEW] Device YY:YY:YY:YY:YY:YY toio Core Cube-j3F
 bluetoothctl scan off
 ```
 
@@ -106,19 +113,18 @@ fleet:
 
 ### 3. nav graph の生成
 
-`maps/toio/toio.building.yaml` から RMF の nav_graph を生成する。`traffic_editor`
+`maps/toio/toio_map.building.yaml` から RMF の nav_graph を生成する。`traffic_editor`
 で waypoint / lane を編集した後に毎回:
 
 ```bash
 cd ~/ff_ws/install/toio_free_fleet_rmf/share/toio_free_fleet_rmf/maps/toio
 ros2 run rmf_building_map_tools building_map_generator nav \
-  toio.building.yaml ./
+  toio_map.building.yaml ./
 ```
 
 これで `nav_graphs/0.yaml` が生成される。
 
-> ⚠️ 初期 `toio.building.yaml` は traffic_editor の編集前スタブで vertex/lane が空。
-> 走らせる前に `traffic_editor toio.building.yaml` で waypoint を打つ必要がある。
+> `toio_map.building.yaml` の vertex/lane を編集するときは `traffic_editor toio_map.building.yaml` を開く。
 
 ## 起動
 
@@ -177,7 +183,7 @@ ros2 run rmf_demos_tasks dispatch_patrol \
   -p waypoint_a waypoint_b -n 3 --use_sim_time false
 ```
 
-`waypoint_a` 等は `toio.building.yaml` で打った頂点名と合わせる。
+`waypoint_a` 等は `toio_map.building.yaml` で打った頂点名と合わせる。
 
 ---
 
@@ -194,6 +200,12 @@ ros2 run rmf_demos_tasks dispatch_patrol \
 
 簡易プレイマット (TMD01SS) の物理 30 × 22 cm は RMF で扱うには小さすぎるため、
 **マット 1 unit = 0.05 m** として仮想 15.2 × 10.8 m の "倉庫" に拡大する。
+
+スケール変換 (`mat_to_rmf_xy`) は client 側で適用し、TF はマット左上=(0, 0) の
+RMF メートル系で publish する。一方 traffic_editor は背景画像の凡例分のオフセットを
+持つため、その小さなズレは `toio_config.yaml` の `reference_coordinates` 4 点
+(`rmf` 側 = 画像上の placement, `robot` 側 = (0,0)〜(15.2, 10.8)) から `nudged`
+が学習して upstream adapter 側で吸収する。
 
 ### 原点はマット左上
 

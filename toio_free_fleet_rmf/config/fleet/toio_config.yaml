@@ -35,7 +35,7 @@ rmf_fleet:
   responsive_wait: True
   robots:
     cube_0:
-      charger: "cube_0_charger"
+      charger: "toio_cube_0_charger"
       responsive_wait: False
       navigation_stack: 2
       init_timeout_sec: 10
@@ -48,7 +48,7 @@ rmf_fleet:
           # (see `building_map_generator nav` in the README).
           map_url: ""
     cube_1:
-      charger: "cube_1_charger"
+      charger: "toio_cube_1_charger"
       responsive_wait: False
       navigation_stack: 2
       init_timeout_sec: 10
@@ -63,17 +63,26 @@ rmf_fleet:
 
 
 # TRANSFORM CONFIG =============================================================
-# Keyed by *map level name* (matches `levels:` in toio.building.yaml). The 4
-# points are the mat corners in mat-units (robot side) and the corresponding
-# RMF map meters (rmf side). Y is not flipped — see CLAUDE.md design table.
+# Keyed by *map level name* (matches `levels:` in toio_map.building.yaml). The 4
+# points must be listed in matching order between `rmf` and `robot` — order
+# below is top-left, top-right, bottom-left, bottom-right.
+#
+# `robot` is in the cube's RMF-meter frame (anchored at mat top-left = 0, 0).
+# The client publishes TF in this frame already (mat_to_rmf_xy applied on the
+# BLE side). These 4 corners describe the physical mat outline: 15.2 × 10.8 m.
+#
+# `rmf` corners are the same mat outline placed in traffic_editor on the
+# toio_map background image. The image has a legend/margin outside the mat so
+# the mat corners are inset from the image edges; that small offset is the
+# only difference between the two coord systems and is what `nudged` learns.
 
 reference_coordinates:
   L1:
-    rmf: [[0.0,  0.0],
-          [15.2, 0.0],
-          [15.2, 10.8],
-          [0.0,  10.8]]
-    robot: [[98,  142],
-            [402, 142],
-            [402, 358],
-            [98,  358]]
+    rmf: [[1.6866,  -1.6016],
+          [16.6677, -1.6016],
+          [1.6866, -12.043],
+          [16.6677, -12.043]]
+    robot: [[0.0,  0.0],
+            [15.2, 0.0],
+            [0.0,  10.8],
+            [15.2, 10.8]]

@@ -101,7 +101,13 @@ class _RobotFacade:
         )
 
     def _publish_tf(self) -> None:
-        """Publish the latest cube pose as a map -> robot_frame transform."""
+        """Publish the latest cube pose in the cube's RMF-meter frame.
+
+        The cube's frame anchors mat top-left at (0, 0); this is what
+        ``reference_coordinates.robot`` describes. Upstream's adapter then
+        applies a small nudged transform to project into the traffic_editor
+        image frame (which is offset by the image legend margins).
+        """
         state = self.manager.states[self.robot_name]
         if state.mat_x is None or state.mat_y is None or not state.on_mat:
             return
@@ -209,6 +215,7 @@ class _RobotFacade:
         target: RmfPose,
     ) -> None:
         """Stream NavigateToPose feedback while a goal is in flight."""
+        # Feedback is published in the same frame as TF (cube's RMF meters).
         while True:
             await asyncio.sleep(0.2)
             state = self.manager.states[self.robot_name]

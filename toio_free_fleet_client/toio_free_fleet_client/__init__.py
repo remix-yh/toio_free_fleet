@@ -15,8 +15,8 @@
 """Public API of the toio_free_fleet_client package."""
 
 from .transform import (
+    MAT_BOUNDS_UNITS,
     MAT_ORIGIN_UNITS,
-    MAT_SAFE_RECT_UNITS,
     mat_to_rmf,
     MatPose,
     METERS_PER_MAT_UNIT,
@@ -25,8 +25,8 @@ from .transform import (
 )
 
 __all__ = [
+    'MAT_BOUNDS_UNITS',
     'MAT_ORIGIN_UNITS',
-    'MAT_SAFE_RECT_UNITS',
     'mat_to_rmf',
     'MatPose',
     'METERS_PER_MAT_UNIT',
