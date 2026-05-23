@@ -53,29 +53,38 @@ class RmfPose:
 
 
 def mat_to_rmf_xy(mat_x: int, mat_y: int) -> tuple[float, float]:
-    """Convert mat (x, y) in mat units to RMF (x, y) in meters."""
+    """Convert mat (x, y) in mat units to RMF (x, y) in meters.
+
+    The mat reports positions in image-style coordinates (Y increasing
+    downward). RMF and traffic_editor use a Y-up world frame
+    (ROS REP-105), so we negate Y on the way out. The mat top-left
+    (MAT_ORIGIN_UNITS) maps to (0, 0); the bottom-right maps to
+    (mat_width_m, -mat_height_m).
+    """
     ox, oy = MAT_ORIGIN_UNITS
     return ((mat_x - ox) * METERS_PER_MAT_UNIT,
-            (mat_y - oy) * METERS_PER_MAT_UNIT)
+            -(mat_y - oy) * METERS_PER_MAT_UNIT)
 
 
 def rmf_to_mat_xy(rmf_x: float, rmf_y: float) -> tuple[int, int]:
     """Convert RMF (x, y) in meters back to mat units, rounded to int."""
     ox, oy = MAT_ORIGIN_UNITS
     return (round(rmf_x / METERS_PER_MAT_UNIT) + ox,
-            round(rmf_y / METERS_PER_MAT_UNIT) + oy)
+            round(-rmf_y / METERS_PER_MAT_UNIT) + oy)
 
 
 def mat_angle_to_rmf_yaw(mat_deg: int) -> float:
-    """Convert a mat angle in degrees to an RMF yaw in radians."""
-    # Y is not flipped, so the RMF map frame is image-style (Y-down) and the
-    # toio angle convention (X axis, clockwise positive) carries over verbatim.
-    return math.radians(mat_deg)
+    """Convert a mat angle in degrees to an RMF yaw in radians.
+
+    Mat angles are measured clockwise from the +X axis (image convention),
+    while RMF yaw is counter-clockwise positive (world convention).
+    """
+    return -math.radians(mat_deg)
 
 
 def rmf_yaw_to_mat_angle(yaw_rad: float) -> int:
     """Convert an RMF yaw in radians to a mat angle in degrees (0-359)."""
-    deg = math.degrees(yaw_rad) % 360
+    deg = (-math.degrees(yaw_rad)) % 360
     return int(round(deg)) % 360
 
 

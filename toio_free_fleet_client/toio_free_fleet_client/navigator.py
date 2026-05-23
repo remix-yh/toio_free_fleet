@@ -55,9 +55,12 @@ class NavConfig:
     speed_max_value: int = 20
     speed_change_type: SpeedChangeType = SpeedChangeType.AccelerationAndDeceleration
     # toio motor_control_target's own timeout is in seconds (max 255).
-    per_waypoint_timeout_s: int = 6
+    # Keep this below the upstream Nav2RobotAdapter's ~7.5s "command handle
+    # seems to be unresponsive" timer so the adapter doesn't preempt with a
+    # new goal while we're still waiting on this one.
+    per_waypoint_timeout_s: int = 4
     # Extra slack on top of the cube-side timeout before we give up locally.
-    response_grace_s: float = 2.0
+    response_grace_s: float = 1.0
 
 
 class Navigator:

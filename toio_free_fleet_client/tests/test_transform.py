@@ -35,10 +35,10 @@ def test_top_left_origin_maps_to_zero():
 
 
 def test_bottom_right_corner():
-    """The TMD01SS bottom-right corner maps to (15.2, 10.8) m."""
+    """The TMD01SS bottom-right corner maps to (15.2, -10.8) m (Y-up RMF)."""
     x, y = mat_to_rmf_xy(402, 358)
     assert math.isclose(x, 15.2, abs_tol=1e-9)
-    assert math.isclose(y, 10.8, abs_tol=1e-9)
+    assert math.isclose(y, -10.8, abs_tol=1e-9)
 
 
 def test_mat_bounds_in_rmf_meters():
@@ -47,7 +47,7 @@ def test_mat_bounds_in_rmf_meters():
     assert mat_to_rmf_xy(x0, y0) == (0.0, 0.0)
     rx, ry = mat_to_rmf_xy(x1, y1)
     assert math.isclose(rx, 15.2, abs_tol=1e-9)
-    assert math.isclose(ry, 10.8, abs_tol=1e-9)
+    assert math.isclose(ry, -10.8, abs_tol=1e-9)
 
 
 def test_round_trip_xy():
@@ -67,10 +67,10 @@ def test_inside_mat():
 
 
 def test_pose_conversion_angle():
-    """Mat 90 degrees maps to RMF pi/2 radians."""
+    """Mat 90 deg (CW) maps to RMF -pi/2 rad (CCW positive)."""
     pose = MatPose(x=250, y=250, angle_deg=90)
     rmf = mat_to_rmf(pose)
-    assert math.isclose(rmf.yaw_rad, math.pi / 2)
+    assert math.isclose(rmf.yaw_rad, -math.pi / 2)
 
 
 def test_meters_per_mat_unit_is_50x_scale():

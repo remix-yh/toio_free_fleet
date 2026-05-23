@@ -145,25 +145,42 @@ class _RobotFacade:
         self.battery_pub.publish(msg)
 
     def _on_goal_request(self, goal_request) -> GoalResponse:
-        """Accept the goal only if no other goal is currently running."""
-        with self._active_goal_lock:
-            if self._active_goal_handle is not None and self._active_goal_handle.is_active:
-                return GoalResponse.REJECT
+        """Always accept goals.
+
+        Nav2RobotAdapter preempts in-flight goals by sending a new one when
+        it decides to replan, and treats rejection as an issue-ticket-worthy
+        failure. We accept every goal and the previous _execute_navigate
+        will simply observe the next motor_control_target overwriting its
+        target and return SUCCESS_WITH_OVERWRITE.
+        """
         return GoalResponse.ACCEPT
 
     def _on_cancel_request(self, goal_handle) -> CancelResponse:
         """Always accept cancellations; execute_callback observes it."""
         return CancelResponse.ACCEPT
 
-    async def _execute_navigate(self, goal_handle: ServerGoalHandle):
-        """Run a NavigateToPose goal by delegating to the BLE Navigator."""
+    def _execute_navigate(self, goal_handle: ServerGoalHandle):
+        """Run a NavigateToPose goal by delegating to the BLE Navigator.
+
+        Implemented as a sync callback so we can block on the BLE work
+        via concurrent.futures.Future.result(). The MultiThreadedExecutor
+        ensures other ROS callbacks keep running while this thread waits.
+        Async + asyncio.wrap_future doesn't work here because the ROS
+        action executor threads don't have an asyncio loop installed.
+        """
         with self._active_goal_lock:
             self._active_goal_handle = goal_handle
 
         result = NavigateToPose.Result()
         try:
             target = self._goal_to_rmf_pose(goal_handle.request)
-            ble_result = await self._dispatch_to_ble(target, goal_handle)
+            cube = self.manager.cube(self.robot_name)
+            # Schedule BLE work on the asyncio loop and block until it finishes.
+            future = asyncio.run_coroutine_threadsafe(
+                self.navigator.follow_path(cube, [target]),
+                self.asyncio_loop,
+            )
+            ble_result: NavResult = future.result()
         except Exception as e:
             self.node.get_logger().error(
                 f'[{self.robot_name}] navigate failed: {type(e).__name__}: {e}'
@@ -181,56 +198,6 @@ class _RobotFacade:
             )
             goal_handle.abort()
         return result
-
-    async def _dispatch_to_ble(
-        self,
-        target: RmfPose,
-        goal_handle: ServerGoalHandle,
-    ) -> NavResult:
-        """Hand the goal to the asyncio BLE loop and await its outcome."""
-        cube = self.manager.cube(self.robot_name)
-        future = asyncio.run_coroutine_threadsafe(
-            self.navigator.follow_path(cube, [target]),
-            self.asyncio_loop,
-        )
-
-        loop = asyncio.get_event_loop()
-        feedback_task = loop.create_task(
-            self._publish_feedback_loop(goal_handle, target)
-        )
-        try:
-            # Bridge concurrent.futures.Future to asyncio.
-            ble_result: NavResult = await asyncio.wrap_future(future)
-        finally:
-            feedback_task.cancel()
-            try:
-                await feedback_task
-            except asyncio.CancelledError:
-                pass
-        return ble_result
-
-    async def _publish_feedback_loop(
-        self,
-        goal_handle: ServerGoalHandle,
-        target: RmfPose,
-    ) -> None:
-        """Stream NavigateToPose feedback while a goal is in flight."""
-        # Feedback is published in the same frame as TF (cube's RMF meters).
-        while True:
-            await asyncio.sleep(0.2)
-            state = self.manager.states[self.robot_name]
-            if state.mat_x is None or state.mat_y is None:
-                continue
-            rmf_x, rmf_y = mat_to_rmf_xy(state.mat_x, state.mat_y)
-            fb = NavigateToPose.Feedback()
-            fb.current_pose.header.stamp = self.node.get_clock().now().to_msg()
-            fb.current_pose.header.frame_id = self.map_frame
-            fb.current_pose.pose.position.x = rmf_x
-            fb.current_pose.pose.position.y = rmf_y
-            dx = target.x - rmf_x
-            dy = target.y - rmf_y
-            fb.distance_remaining = math.hypot(dx, dy)
-            goal_handle.publish_feedback(fb)
 
     @staticmethod
     def _goal_to_rmf_pose(goal) -> RmfPose:

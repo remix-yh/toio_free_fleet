@@ -35,7 +35,7 @@ rmf_fleet:
   responsive_wait: True
   robots:
     cube_0:
-      charger: "toio_cube_0_charger"
+      charger: "toio_0_charger"
       responsive_wait: False
       navigation_stack: 2
       init_timeout_sec: 10
@@ -48,7 +48,7 @@ rmf_fleet:
           # (see `building_map_generator nav` in the README).
           map_url: ""
     cube_1:
-      charger: "toio_cube_1_charger"
+      charger: "toio_1_charger"
       responsive_wait: False
       navigation_stack: 2
       init_timeout_sec: 10
@@ -82,7 +82,7 @@ reference_coordinates:
           [16.6677, -1.6016],
           [1.6866, -12.043],
           [16.6677, -12.043]]
-    robot: [[0.0,  0.0],
-            [15.2, 0.0],
-            [0.0,  10.8],
-            [15.2, 10.8]]
+    robot: [[0.0,   0.0],
+            [15.2,  0.0],
+            [0.0,  -10.8],
+            [15.2, -10.8]]

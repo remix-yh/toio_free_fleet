@@ -44,7 +44,7 @@ toio_free_fleet/
 |---|---|---|
 | スケール | `METERS_PER_MAT_UNIT = 0.05` | マット 30 cm を RMF で 15 m の "倉庫" に拡大 |
 | 原点 | マット左上 = RMF (0, 0) | `reference_coordinates` の 4 点が矩形の 4 隅と一致 |
-| Y 軸 | 反転しない (Y-down) | traffic_editor 画面と一致、変換コードがほぼ id |
+| Y 軸 | 反転する (mat→RMF で `y` を負反転) | RMF / traffic_editor は ROS REP-105 の Y-up。`nudged` は反射を含まないので、ここで揃えないと初期 pose が nav graph から外れて adapter が立ち上がらない |
 | 1 プロセス N 台 | `MultipleToioCoreCubes` を 1 つ | PC の BLE セントラルが 1 つしかないため |
 | cube ID で名指し | `cube_id` (BLE local name 末尾 3 文字) を `client.yaml` に書く | スキャン順任せだと再起動でロボットが入れ替わる |
 | 速度系 | toio 公式仕様から導出 | 環境ごとのキャリブを排除 |

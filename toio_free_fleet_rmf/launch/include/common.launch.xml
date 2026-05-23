@@ -1,20 +1,43 @@
 <?xml version="1.0"?>
+<!--
+Minimum RMF backend for the toio fleet. Modelled after rmf_demos' common.launch.xml
+but trimmed to the nodes the toio adapter actually needs (no door/lift/visualization).
+-->
 <launch>
-  <arg name="use_sim_time" default="false"/>
+  <arg name="use_sim_time" default="false"
+       description="Use the /clock topic for time to sync with simulation"/>
+  <arg name="building_map_file"
+       default="$(find-pkg-share toio_free_fleet_rmf)/maps/toio_map/toio_map.building.yaml"
+       description="Building description yaml for rmf_building_map_tools"/>
+  <arg name="bidding_time_window" default="2.0"/>
+  <arg name="use_unique_hex_string_with_task_id" default="true"/>
+  <arg name="server_uri" default=""/>
 
-  <node pkg="rmf_traffic_ros2" exec="rmf_traffic_schedule" name="rmf_traffic_schedule_primary" output="screen">
+  <!-- Traffic Schedule -->
+  <node pkg="rmf_traffic_ros2" exec="rmf_traffic_schedule" name="rmf_traffic_schedule_primary" output="both">
     <param name="use_sim_time" value="$(var use_sim_time)"/>
   </node>
 
-  <node pkg="rmf_traffic_ros2" exec="rmf_traffic_blockade" name="rmf_traffic_blockade_node" output="screen">
+  <!-- Blockade Moderator -->
+  <node pkg="rmf_traffic_ros2" exec="rmf_traffic_blockade" output="both">
     <param name="use_sim_time" value="$(var use_sim_time)"/>
   </node>
 
-  <node pkg="rmf_fleet_adapter" exec="dispatcher_node" name="dispatcher_node" output="screen">
+  <!-- Building Map Server (adapter needs to query the building/level info) -->
+  <node pkg="rmf_building_map_tools" exec="building_map_server" args="$(var building_map_file)">
     <param name="use_sim_time" value="$(var use_sim_time)"/>
   </node>
 
-  <node pkg="rmf_task_ros2" exec="rmf_task_dispatcher" name="rmf_task_dispatcher" output="screen">
+  <!-- Mutex Group Supervisor -->
+  <node pkg="rmf_fleet_adapter" exec="mutex_group_supervisor">
     <param name="use_sim_time" value="$(var use_sim_time)"/>
+  </node>
+
+  <!-- Task Dispatcher (accepts dispatch_patrol etc.) -->
+  <node pkg="rmf_task_ros2" exec="rmf_task_dispatcher" output="screen">
+    <param name="use_sim_time" value="$(var use_sim_time)"/>
+    <param name="bidding_time_window" value="$(var bidding_time_window)"/>
+    <param name="use_unique_hex_string_with_task_id" value="$(var use_unique_hex_string_with_task_id)"/>
+    <param name="server_uri" value="$(var server_uri)"/>
   </node>
 </launch>
