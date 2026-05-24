@@ -40,4 +40,13 @@ but trimmed to the nodes the toio adapter actually needs (no door/lift/visualiza
     <param name="use_unique_hex_string_with_task_id" value="$(var use_unique_hex_string_with_task_id)"/>
     <param name="server_uri" value="$(var server_uri)"/>
   </node>
+
+  <!-- Visualization. The schedule_visualizer_node serves trajectory data on
+       ws://localhost:8006, which the rmf-web dashboard reads to render the
+       path lines for in-flight tasks. headless=true skips rviz. -->
+  <include file="$(find-pkg-share rmf_visualization)/visualization.launch.xml">
+    <arg name="use_sim_time" value="$(var use_sim_time)"/>
+    <arg name="map_name" value="L1"/>
+    <arg name="headless" value="true"/>
+  </include>
 </launch>

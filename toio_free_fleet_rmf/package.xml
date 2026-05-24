@@ -18,6 +18,7 @@
   <exec_depend>rmf_fleet_adapter_python</exec_depend>
   <exec_depend>free_fleet_adapter</exec_depend>
   <exec_depend>rmf_building_map_tools</exec_depend>
+  <exec_depend>rmf_visualization</exec_depend>
 
   <export>
     <build_type>ament_cmake</build_type>
