@@ -26,6 +26,7 @@ from toio import (
     IndicatorParam,
     MultipleToioCoreCubes,
 )
+from toio.cube.api.battery import Battery, BatteryInformation
 from toio.cube.api.id_information import (
     IdInformation,
     PositionId,
@@ -64,6 +65,8 @@ class CubeState:
     mat_angle: int | None = None
     on_mat: bool = False
     last_update_ns: int = 0
+    # Battery level 0-100 reported by the cube, or None until first read.
+    battery_level: int | None = None
 
 
 @dataclass
@@ -156,6 +159,20 @@ class CubeManager:
             await self._cubes[i].api.id_information.register_notification_handler(
                 self._make_handler(robot.name)
             )
+            # Battery: seed with an initial read, then keep updated via
+            # notifications (the cube pushes on change).
+            try:
+                info = await self._cubes[i].api.battery.read()
+                if isinstance(info, BatteryInformation):
+                    self._states[robot.name].battery_level = info.battery_level
+                await self._cubes[i].api.battery.register_notification_handler(
+                    self._make_battery_handler(robot.name)
+                )
+            except Exception as e:
+                print(
+                    f'[{robot.name}] battery not available '
+                    f'({type(e).__name__}: {e}); reporting unknown.'
+                )
         return self
 
     async def __aexit__(self, exc_type, exc, tb) -> None:
@@ -191,4 +208,12 @@ class CubeManager:
             state.last_update_ns = time.time_ns()
             for listener in self._listeners:
                 loop.create_task(listener(name, state))
+        return handler
+
+    def _make_battery_handler(self, name: str):
+        """Build a battery notification handler bound to ``name``."""
+        def handler(payload: bytearray) -> None:
+            info = Battery.is_my_data(payload)
+            if isinstance(info, BatteryInformation):
+                self._states[name].battery_level = info.battery_level
         return handler

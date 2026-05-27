@@ -132,12 +132,16 @@ class _RobotFacade:
         self.tf_pub.publish(TFMessage(transforms=[t]))
 
     def _publish_battery_state(self) -> None:
-        """Publish a synthetic battery state until cube battery is wired in."""
+        """Publish the cube's battery level (BatteryState.percentage in 0-1)."""
+        state = self.manager.states[self.robot_name]
         msg = BatteryState()
         msg.header.stamp = self.node.get_clock().now().to_msg()
         msg.header.frame_id = self.robot_frame
         msg.voltage = float('nan')
-        msg.percentage = 1.0
+        # toio reports 0-100; RMF wants a 0-1 fraction. Fall back to full
+        # until the first reading arrives so the adapter doesn't see 0%.
+        level = state.battery_level
+        msg.percentage = (level / 100.0) if level is not None else 1.0
         msg.present = True
         msg.power_supply_status = BatteryState.POWER_SUPPLY_STATUS_DISCHARGING
         msg.power_supply_health = BatteryState.POWER_SUPPLY_HEALTH_GOOD
@@ -175,9 +179,10 @@ class _RobotFacade:
         try:
             target = self._goal_to_rmf_pose(goal_handle.request)
             cube = self.manager.cube(self.robot_name)
+            state = self.manager.states[self.robot_name]
             # Schedule BLE work on the asyncio loop and block until it finishes.
             future = asyncio.run_coroutine_threadsafe(
-                self.navigator.follow_path(cube, [target]),
+                self.navigator.follow_path(cube, [target], state),
                 self.asyncio_loop,
             )
             ble_result: NavResult = future.result()
@@ -191,7 +196,13 @@ class _RobotFacade:
         if ble_result is NavResult.COMPLETED:
             goal_handle.succeed()
         elif ble_result is NavResult.PREEMPTED:
-            goal_handle.canceled()
+            # Superseded by a newer goal. Use canceled() only if the adapter
+            # actually requested a cancel (rclpy rejects canceled() otherwise);
+            # fall back to abort() so we always reach a terminal state.
+            if goal_handle.is_cancel_requested:
+                goal_handle.canceled()
+            else:
+                goal_handle.abort()
         else:
             self.node.get_logger().warn(
                 f'[{self.robot_name}] navigate ended as {ble_result.value}'

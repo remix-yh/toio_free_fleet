@@ -57,7 +57,7 @@ levels:
       - [961.66499999999996, 797.577, 0, park_3, {is_parking_spot: [4, true]}]
       - [850.08600000000001, 451.73500000000001, 0, st_3, {is_holding_point: [4, true]}]
       - [548.21199999999999, 452.64999999999998, 0, st_2, {is_holding_point: [4, true]}]
-      - [359.50700000000001, 814.80799999999999, 0, park_2, {is_parking_spot: [4, true]}]
+      - [359.72699999999998, 800.64999999999998, 0, park_2, {is_parking_spot: [4, true]}]
       - [273.10599999999999, 417.12, 0, st_1, {is_holding_point: [4, true]}]
 lifts: {}
 name: toio_map

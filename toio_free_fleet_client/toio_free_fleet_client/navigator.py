@@ -61,6 +61,10 @@ class NavConfig:
     per_waypoint_timeout_s: int = 4
     # Extra slack on top of the cube-side timeout before we give up locally.
     response_grace_s: float = 1.0
+    # If the cube is already within this many mat units of the target, treat
+    # the goal as reached without issuing a motor command (avoids spinning in
+    # place when the target is essentially the cube's current position).
+    arrival_tolerance_units: int = 12
 
 
 class Navigator:
@@ -70,21 +74,37 @@ class Navigator:
         """Build a navigator with the given motion configuration."""
         self.config = config or NavConfig()
 
-    async def follow_path(self, cube, path: list[RmfPose]) -> NavResult:
-        """Drive ``cube`` through every waypoint in ``path``."""
+    async def follow_path(self, cube, path: list[RmfPose], state=None) -> NavResult:
+        """Drive ``cube`` through every waypoint in ``path``.
+
+        ``state`` is the optional live CubeState for this cube; when provided
+        it lets _goto skip targets the cube has already reached.
+        """
         for waypoint in path:
-            result = await self._goto(cube, waypoint)
+            result = await self._goto(cube, waypoint, state)
             if result is not NavResult.COMPLETED:
                 return result
         return NavResult.COMPLETED
 
-    async def _goto(self, cube, target: RmfPose) -> NavResult:
+    async def _goto(self, cube, target: RmfPose, state=None) -> NavResult:
         """Send a target command and wait for the cube to report arrival."""
         # `target` is in the cube's RMF-meter frame (mat top-left = 0,0).
         # Convert back to mat units for motor_control_target.
         mx, my = rmf_to_mat_xy(target.x, target.y)
         if not inside_mat(mx, my):
             return NavResult.INVALID
+
+        # Already at this position? Skip the command. We intentionally ignore
+        # the goal's target heading: the adapter rapidly re-sends same-position
+        # goals with varying yaw to orient the cube, and honoring those with
+        # motor_control_target makes the cube spin/drift in place (differential
+        # rotation isn't a clean pivot), creating a feedback-instability loop.
+        # A patrol only needs the cube to reach positions, so position-only
+        # arrival keeps it stable.
+        if state is not None and state.mat_x is not None and state.mat_y is not None:
+            tol = self.config.arrival_tolerance_units
+            if abs(state.mat_x - mx) <= tol and abs(state.mat_y - my) <= tol:
+                return NavResult.COMPLETED
 
         loop = asyncio.get_running_loop()
         arrival: asyncio.Future[MotorResponseCode] = loop.create_future()
@@ -110,6 +130,9 @@ class Navigator:
                         point=Point(x=mx, y=my),
                         angle=0,
                     ),
+                    # Don't chase a final heading — see the position-only
+                    # arrival note above. WithoutRotation keeps the cube from
+                    # spinning in place at each waypoint.
                     rotation_option=RotationOption.WithoutRotation,
                 ),
             )
@@ -130,8 +153,14 @@ class Navigator:
     @staticmethod
     def _map_response_code(code: MotorResponseCode) -> NavResult:
         """Translate a toio motor response code to a NavResult."""
-        if code in (MotorResponseCode.SUCCESS, MotorResponseCode.SUCCESS_WITH_OVERWRITE):
+        if code == MotorResponseCode.SUCCESS:
             return NavResult.COMPLETED
+        # SUCCESS_WITH_OVERWRITE means a newer motor_control_target replaced
+        # this one before it finished — i.e. the target was NOT reached. We
+        # must not report it as COMPLETED or RMF will mark waypoints (and the
+        # whole task) done while the cube is still mid-transit.
+        if code == MotorResponseCode.SUCCESS_WITH_OVERWRITE:
+            return NavResult.PREEMPTED
         if code == MotorResponseCode.ERROR_TIMEOUT:
             return NavResult.TIMEOUT
         if code == MotorResponseCode.ERROR_ID_MISSED:
