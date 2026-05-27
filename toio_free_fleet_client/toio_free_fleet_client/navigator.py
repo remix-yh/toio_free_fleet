@@ -54,11 +54,12 @@ class NavConfig:
 
     speed_max_value: int = 20
     speed_change_type: SpeedChangeType = SpeedChangeType.AccelerationAndDeceleration
-    # toio motor_control_target's own timeout is in seconds (max 255).
-    # Keep this below the upstream Nav2RobotAdapter's ~7.5s "command handle
-    # seems to be unresponsive" timer so the adapter doesn't preempt with a
-    # new goal while we're still waiting on this one.
-    per_waypoint_timeout_s: int = 4
+    # toio motor_control_target's own timeout is in seconds (max 255). Must be
+    # long enough for the longest single lane segment to complete; the upstream
+    # adapter's "unresponsive" replan is driven by the conservative
+    # vehicle_traits in toio_config.yaml, not a fixed timer, so we mainly need
+    # this to not cut off a legitimately in-progress move.
+    per_waypoint_timeout_s: int = 6
     # Extra slack on top of the cube-side timeout before we give up locally.
     response_grace_s: float = 1.0
     # If the cube is already within this many mat units of the target, treat

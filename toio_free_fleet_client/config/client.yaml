@@ -1,8 +1,6 @@
 fleet:
   name: toio
   robots:
-    # cube_id は cube 底面シール末尾 3 文字 (BLE local name "toio Core Cube-XYZ" の XYZ)。
-    # 確認方法は README の "cube ID の確認" を参照。
     - name: cube_0
       cube_id: N7D
       led_color: [0xFF, 0x00, 0x00]
@@ -11,12 +9,9 @@ fleet:
       led_color: [0x00, 0x00, 0xFF]
 
 toio:
-  # 公式仕様の motor_control_target の速度値 (mm/s 換算)。
   speed_max_value: 20
-  # SpeedChangeType の整数値。3 = AccelerationAndDeceleration (加減速あり)。
   speed_change_type: 3
 
-# Nav2RobotAdapter が tf に期待する frame_id。下流の RMF 側設定と必ず合わせる。
 frames:
   map: map
   robot: base_footprint

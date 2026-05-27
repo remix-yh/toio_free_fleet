@@ -36,6 +36,7 @@ import math
 import threading
 
 from action_msgs.msg import GoalStatus
+from builtin_interfaces.msg import Duration
 from geometry_msgs.msg import TransformStamped
 from nav2_msgs.action import NavigateToPose
 from rclpy.action import ActionServer, CancelResponse, GoalResponse
@@ -51,6 +52,15 @@ from .transform import mat_angle_to_rmf_yaw, mat_to_rmf_xy, RmfPose
 
 BATTERY_STATE_PERIOD_S = 1.0
 TF_PUBLISH_PERIOD_S = 0.1
+NAV_FEEDBACK_PERIOD_S = 0.2
+# estimated_time_remaining we report while a goal is in flight. The upstream
+# Nav2RobotAdapter uses this as a fast path in _is_navigation_done: as long as
+# the last feedback's estimated completion is still in the future, it skips the
+# blocking get_result zenoh query and keeps updating the robot pose at full
+# rate. We refresh feedback faster than this value so the fast path always
+# holds during navigation; once we succeed/abort, feedback stops and the stale
+# estimate expires within this window so completion is detected promptly.
+NAV_FEEDBACK_ETA_S = 2
 
 
 class _RobotFacade:
@@ -87,6 +97,9 @@ class _RobotFacade:
         )
 
         self.tf_timer = node.create_timer(TF_PUBLISH_PERIOD_S, self._publish_tf)
+        self.nav_feedback_timer = node.create_timer(
+            NAV_FEEDBACK_PERIOD_S, self._publish_nav_feedback
+        )
         self.battery_timer = node.create_timer(
             BATTERY_STATE_PERIOD_S, self._publish_battery_state
         )
@@ -147,6 +160,34 @@ class _RobotFacade:
         msg.power_supply_health = BatteryState.POWER_SUPPLY_HEALTH_GOOD
         msg.power_supply_technology = BatteryState.POWER_SUPPLY_TECHNOLOGY_LION
         self.battery_pub.publish(msg)
+
+    def _publish_nav_feedback(self) -> None:
+        """Publish NavigateToPose feedback while a goal is executing.
+
+        Without feedback carrying estimated_time_remaining, upstream's
+        _is_navigation_done falls back to a blocking get_result zenoh query
+        on every update cycle, throttling the robot-pose update rate during
+        navigation (the dashboard then only refreshes position at waypoints).
+        """
+        with self._active_goal_lock:
+            gh = self._active_goal_handle
+        if gh is None or not gh.is_active:
+            return
+
+        fb = NavigateToPose.Feedback()
+        fb.current_pose.header.stamp = self.node.get_clock().now().to_msg()
+        fb.current_pose.header.frame_id = self.map_frame
+        state = self.manager.states[self.robot_name]
+        if state.mat_x is not None and state.mat_y is not None:
+            rmf_x, rmf_y = mat_to_rmf_xy(state.mat_x, state.mat_y)
+            fb.current_pose.pose.position.x = rmf_x
+            fb.current_pose.pose.position.y = rmf_y
+        fb.estimated_time_remaining = Duration(sec=NAV_FEEDBACK_ETA_S)
+        try:
+            gh.publish_feedback(fb)
+        except Exception:
+            # Goal may have reached a terminal state between the check and here.
+            pass
 
     def _on_goal_request(self, goal_request) -> GoalResponse:
         """Always accept goals.

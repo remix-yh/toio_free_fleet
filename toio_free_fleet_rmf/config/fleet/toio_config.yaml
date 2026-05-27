@@ -5,9 +5,15 @@
 
 rmf_fleet:
   name: "toio"
+  # Kept deliberately conservative (slower than the cube actually is). RMF
+  # derives an expected travel time per segment from these and flags the
+  # robot "unresponsive" -> replan if it doesn't arrive in time. The toio's
+  # motor_control_target (Linear) rotates to face each target before driving,
+  # which is slower than a high angular limit implies; under-estimating speed
+  # here gives the cube enough time and stops the replan churn.
   limits:
-    linear: [1.0, 2.0]    # velocity, acceleration (m/s, m/s^2)
-    angular: [3.0, 5.0]   # velocity, acceleration (rad/s, rad/s^2)
+    linear: [0.7, 1.0]    # velocity, acceleration (m/s, m/s^2)
+    angular: [1.0, 2.0]   # velocity, acceleration (rad/s, rad/s^2)
   profile:
     footprint: 1.25       # radius in m (cube body 31.8 mm * 50 = 1.59 m; rounded down)
     vicinity:  2.50
