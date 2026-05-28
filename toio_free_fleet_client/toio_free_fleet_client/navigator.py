@@ -55,17 +55,25 @@ class NavConfig:
     speed_max_value: int = 20
     speed_change_type: SpeedChangeType = SpeedChangeType.AccelerationAndDeceleration
     # toio motor_control_target's own timeout is in seconds (max 255). Must be
-    # long enough for the longest single lane segment to complete; the upstream
-    # adapter's "unresponsive" replan is driven by the conservative
-    # vehicle_traits in toio_config.yaml, not a fixed timer, so we mainly need
-    # this to not cut off a legitimately in-progress move.
-    per_waypoint_timeout_s: int = 6
+    # long enough for the longest single lane segment to complete. Upstream's
+    # MoveRobot "command handle seems to be unresponsive" timer is 10s but
+    # gets reset by every TF / feedback update (10Hz), so it effectively never
+    # fires and isn't the limiting factor here.
+    per_waypoint_timeout_s: int = 10
     # Extra slack on top of the cube-side timeout before we give up locally.
     response_grace_s: float = 1.0
     # If the cube is already within this many mat units of the target, treat
     # the goal as reached without issuing a motor command (avoids spinning in
     # place when the target is essentially the cube's current position).
     arrival_tolerance_units: int = 12
+    # toio reports ERROR_ID_MISSED whenever it briefly can't read a PositionId
+    # tile during motion — typically a transient glitch from a worn/dirty mat,
+    # not the cube actually leaving the play surface. Retry the same target
+    # this many times before treating ID_MISSED as a real OFF_MAT failure.
+    id_missed_max_retries: int = 3
+    # Short wait after an ID_MISSED before retrying, to let the next PositionId
+    # notification arrive (and state.on_mat refresh).
+    id_missed_retry_delay_s: float = 0.2
 
 
 class Navigator:
@@ -108,46 +116,75 @@ class Navigator:
                 return NavResult.COMPLETED
 
         loop = asyncio.get_running_loop()
-        arrival: asyncio.Future[MotorResponseCode] = loop.create_future()
 
-        def on_motor_response(payload: bytearray) -> None:
-            # The motor characteristic emits several response types; only the
-            # target-control response carries the arrival code we care about.
-            info = Motor.is_my_data(payload)
-            if isinstance(info, ResponseMotorControlTarget) and not arrival.done():
-                arrival.set_result(info.response_code)
+        def make_handler(arrival: asyncio.Future[MotorResponseCode]):
+            def on_motor_response(payload: bytearray) -> None:
+                # The motor characteristic emits several response types; only
+                # the target-control response carries the arrival code.
+                info = Motor.is_my_data(payload)
+                if isinstance(info, ResponseMotorControlTarget) and not arrival.done():
+                    arrival.set_result(info.response_code)
+            return on_motor_response
 
-        await cube.api.motor.register_notification_handler(on_motor_response)
-        try:
-            await cube.api.motor.motor_control_target(
-                timeout=self.config.per_waypoint_timeout_s,
-                movement_type=MovementType.Linear,
-                speed=Speed(
-                    max=self.config.speed_max_value,
-                    speed_change_type=self.config.speed_change_type,
-                ),
-                target=TargetPosition(
-                    cube_location=CubeLocation(
-                        point=Point(x=mx, y=my),
-                        angle=0,
-                    ),
-                    # Don't chase a final heading — see the position-only
-                    # arrival note above. WithoutRotation keeps the cube from
-                    # spinning in place at each waypoint.
-                    rotation_option=RotationOption.WithoutRotation,
-                ),
-            )
+        # Retry loop: ID_MISSED is treated as transient and retried while the
+        # cube still believes it's on the mat. Any other terminal code (or
+        # exhausting retries) short-circuits and bubbles up.
+        code: MotorResponseCode | None = None
+        retries_left = self.config.id_missed_max_retries
+        while True:
+            arrival: asyncio.Future[MotorResponseCode] = loop.create_future()
+            handler = make_handler(arrival)
+            await cube.api.motor.register_notification_handler(handler)
             try:
-                code = await asyncio.wait_for(
-                    arrival,
-                    timeout=self.config.per_waypoint_timeout_s + self.config.response_grace_s,
+                await cube.api.motor.motor_control_target(
+                    timeout=self.config.per_waypoint_timeout_s,
+                    movement_type=MovementType.Linear,
+                    speed=Speed(
+                        max=self.config.speed_max_value,
+                        speed_change_type=self.config.speed_change_type,
+                    ),
+                    target=TargetPosition(
+                        cube_location=CubeLocation(
+                            point=Point(x=mx, y=my),
+                            angle=0,
+                        ),
+                        # Don't chase a final heading — see the position-only
+                        # arrival note above. WithoutRotation keeps the cube
+                        # from spinning in place at each waypoint.
+                        rotation_option=RotationOption.WithoutRotation,
+                    ),
                 )
-            except asyncio.TimeoutError:
-                return NavResult.TIMEOUT
-        except asyncio.CancelledError:
-            return NavResult.PREEMPTED
-        finally:
-            await cube.api.motor.unregister_notification_handler(on_motor_response)
+                try:
+                    code = await asyncio.wait_for(
+                        arrival,
+                        timeout=self.config.per_waypoint_timeout_s + self.config.response_grace_s,
+                    )
+                except asyncio.TimeoutError:
+                    return NavResult.TIMEOUT
+            except asyncio.CancelledError:
+                # RMF is yielding this robot. Brake the cube before bubbling
+                # up so the negotiation result is physically respected.
+                try:
+                    await asyncio.shield(
+                        cube.api.motor.motor_control(left=0, right=0)
+                    )
+                except Exception:
+                    pass
+                return NavResult.PREEMPTED
+            finally:
+                await cube.api.motor.unregister_notification_handler(handler)
+
+            if code != MotorResponseCode.ERROR_ID_MISSED:
+                break
+
+            # ID_MISSED: usually a transient PositionId hiccup, not a real
+            # off-mat. Retry while the cube still reports on_mat, up to
+            # `id_missed_max_retries` times.
+            await asyncio.sleep(self.config.id_missed_retry_delay_s)
+            on_mat_now = state is not None and state.on_mat
+            if not on_mat_now or retries_left <= 0:
+                break
+            retries_left -= 1
 
         return self._map_response_code(code)
 

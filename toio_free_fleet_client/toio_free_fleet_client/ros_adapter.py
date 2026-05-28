@@ -32,6 +32,7 @@ via ``asyncio.run_coroutine_threadsafe``.
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import math
 import threading
 
@@ -212,6 +213,11 @@ class _RobotFacade:
         ensures other ROS callbacks keep running while this thread waits.
         Async + asyncio.wrap_future doesn't work here because the ROS
         action executor threads don't have an asyncio loop installed.
+
+        We poll `goal_handle.is_cancel_requested` while the BLE work is
+        in flight so RMF can actually yield this robot during a
+        negotiation. Without cancellation, two cubes loop-patrolling
+        through a shared waypoint will collide.
         """
         with self._active_goal_lock:
             self._active_goal_handle = goal_handle
@@ -226,7 +232,24 @@ class _RobotFacade:
                 self.navigator.follow_path(cube, [target], state),
                 self.asyncio_loop,
             )
-            ble_result: NavResult = future.result()
+            # Wait with cancel polling. When goal_handle.is_cancel_requested
+            # flips true we cancel the asyncio task; navigator's CancelledError
+            # branch issues motor stop and returns PREEMPTED.
+            ble_result: NavResult | None = None
+            while True:
+                try:
+                    ble_result = future.result(timeout=0.1)
+                    break
+                except concurrent.futures.TimeoutError:
+                    if goal_handle.is_cancel_requested:
+                        future.cancel()
+                        try:
+                            ble_result = future.result(timeout=2.0)
+                        except concurrent.futures.CancelledError:
+                            ble_result = NavResult.PREEMPTED
+                        except concurrent.futures.TimeoutError:
+                            ble_result = NavResult.PREEMPTED
+                        break
         except Exception as e:
             self.node.get_logger().error(
                 f'[{self.robot_name}] navigate failed: {type(e).__name__}: {e}'
@@ -237,9 +260,8 @@ class _RobotFacade:
         if ble_result is NavResult.COMPLETED:
             goal_handle.succeed()
         elif ble_result is NavResult.PREEMPTED:
-            # Superseded by a newer goal. Use canceled() only if the adapter
-            # actually requested a cancel (rclpy rejects canceled() otherwise);
-            # fall back to abort() so we always reach a terminal state.
+            # Superseded by a newer goal or canceled by RMF. canceled() is only
+            # legal if a cancel was actually requested; otherwise rclpy errors.
             if goal_handle.is_cancel_requested:
                 goal_handle.canceled()
             else:
