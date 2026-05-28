@@ -37,8 +37,12 @@ rmf_fleet:
   task_capabilities:
     loop: True
     delivery: True
-  finishing_request: "nothing"
+  finishing_request: "park"
   responsive_wait: True
+  # Opt in to the rmf_reservation_node queue_manager (started by
+  # common.launch.xml) so parking spot assignment is deconflicted between
+  # cubes. Without this flag the fleet adapter ignores the queue manager.
+  use_parking_reservations: True
   robots:
     cube_0:
       charger: "toio_0_charger"

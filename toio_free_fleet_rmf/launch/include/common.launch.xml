@@ -49,4 +49,15 @@ but trimmed to the nodes the toio adapter actually needs (no door/lift/visualiza
     <arg name="map_name" value="L1"/>
     <arg name="headless" value="true"/>
   </include>
+
+  <!-- Reservation queue manager: deconflicts is_parking_spot waypoints when
+       multiple robots want the same parking. Activated per-fleet by setting
+       `use_parking_reservations: True` in the fleet config yaml. -->
+  <arg name="use_reservation_node" default="true"
+       description="Run the parking-reservation queue_manager"/>
+  <group if="$(var use_reservation_node)">
+    <node pkg="rmf_reservation_node" exec="queue_manager">
+      <param name="use_sim_time" value="$(var use_sim_time)"/>
+    </node>
+  </group>
 </launch>
