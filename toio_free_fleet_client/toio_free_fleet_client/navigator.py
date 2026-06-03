@@ -62,10 +62,6 @@ class NavConfig:
     per_waypoint_timeout_s: int = 10
     # Extra slack on top of the cube-side timeout before we give up locally.
     response_grace_s: float = 1.0
-    # If the cube is already within this many mat units of the target, treat
-    # the goal as reached without issuing a motor command (avoids spinning in
-    # place when the target is essentially the cube's current position).
-    arrival_tolerance_units: int = 12
     # toio reports ERROR_ID_MISSED whenever it briefly can't read a PositionId
     # tile during motion — typically a transient glitch from a worn/dirty mat,
     # not the cube actually leaving the play surface. Retry the same target
@@ -86,8 +82,8 @@ class Navigator:
     async def follow_path(self, cube, path: list[RmfPose], state=None) -> NavResult:
         """Drive ``cube`` through every waypoint in ``path``.
 
-        ``state`` is the optional live CubeState for this cube; when provided
-        it lets _goto skip targets the cube has already reached.
+        ``state`` is the optional live CubeState for this cube; it lets _goto
+        check on_mat when deciding whether an ID_MISSED is transient.
         """
         for waypoint in path:
             result = await self._goto(cube, waypoint, state)
@@ -102,18 +98,6 @@ class Navigator:
         mx, my = rmf_to_mat_xy(target.x, target.y)
         if not inside_mat(mx, my):
             return NavResult.INVALID
-
-        # Already at this position? Skip the command. We intentionally ignore
-        # the goal's target heading: the adapter rapidly re-sends same-position
-        # goals with varying yaw to orient the cube, and honoring those with
-        # motor_control_target makes the cube spin/drift in place (differential
-        # rotation isn't a clean pivot), creating a feedback-instability loop.
-        # A patrol only needs the cube to reach positions, so position-only
-        # arrival keeps it stable.
-        if state is not None and state.mat_x is not None and state.mat_y is not None:
-            tol = self.config.arrival_tolerance_units
-            if abs(state.mat_x - mx) <= tol and abs(state.mat_y - my) <= tol:
-                return NavResult.COMPLETED
 
         loop = asyncio.get_running_loop()
 
