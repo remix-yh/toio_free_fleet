@@ -4,6 +4,8 @@
        description="Use the /clock topic for time to sync with simulation"/>
   <arg name="server_uri" default=""
        description="URI of the API server (rmf-web). Empty disables uploads."/>
+  <arg name="headless" default="false"
+       description="Set true to skip rviz2 (the RMF schedule visualization)"/>
 
   <arg name="config_file"
        default="$(find-pkg-share toio_free_fleet_rmf)/config/fleet/toio_config.yaml"/>
@@ -13,6 +15,7 @@
 
   <include file="$(find-pkg-share toio_free_fleet_rmf)/launch/include/common.launch.xml">
     <arg name="use_sim_time" value="$(var use_sim_time)"/>
+    <arg name="headless" value="$(var headless)"/>
   </include>
 
   <include file="$(find-pkg-share free_fleet_adapter)/fleet_adapter.launch.xml">

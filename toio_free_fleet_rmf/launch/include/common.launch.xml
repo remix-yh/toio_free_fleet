@@ -12,6 +12,14 @@ but trimmed to the nodes the toio adapter actually needs (no door/lift/visualiza
   <arg name="bidding_time_window" default="2.0"/>
   <arg name="use_unique_hex_string_with_task_id" default="true"/>
   <arg name="server_uri" default=""/>
+  <arg name="headless" default="false"
+       description="Set true to skip rviz2 (the RMF schedule visualization)"/>
+  <!-- Our own rviz config. The stock rmf.rviz subscribes the Map display to
+       /floor_plan, but rmf's floorplan_visualizer publishes to /floorplan, so
+       the mat image never shows. toio.rviz fixes that topic (and bumps the Map
+       alpha so the mostly-white mat is visible). -->
+  <arg name="viz_config_file"
+       default="$(find-pkg-share toio_free_fleet_rmf)/config/rviz/toio.rviz"/>
 
   <!-- Traffic Schedule -->
   <node pkg="rmf_traffic_ros2" exec="rmf_traffic_schedule" name="rmf_traffic_schedule_primary" output="both">
@@ -43,11 +51,12 @@ but trimmed to the nodes the toio adapter actually needs (no door/lift/visualiza
 
   <!-- Visualization. The schedule_visualizer_node serves trajectory data on
        ws://localhost:8006, which the rmf-web dashboard reads to render the
-       path lines for in-flight tasks. headless=true skips rviz. -->
+       path lines for in-flight tasks. headless=false brings up rviz2 too. -->
   <include file="$(find-pkg-share rmf_visualization)/visualization.launch.xml">
     <arg name="use_sim_time" value="$(var use_sim_time)"/>
     <arg name="map_name" value="L1"/>
-    <arg name="headless" value="true"/>
+    <arg name="headless" value="$(var headless)"/>
+    <arg name="viz_config_file" value="$(var viz_config_file)"/>
   </include>
 
   <!-- Reservation queue manager: deconflicts is_parking_spot waypoints when
