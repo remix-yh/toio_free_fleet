@@ -1,0 +1,90 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="780" viewBox="0 0 900 780" font-family="'Segoe UI', Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arrow" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L7,3 L0,6 Z" fill="#37474f"/>
+    </marker>
+    <marker id="arrowStart" markerWidth="9" markerHeight="9" refX="0" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M7,0 L0,3 L7,6 Z" fill="#37474f"/>
+    </marker>
+    <marker id="arrowDash" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L7,3 L0,6 Z" fill="#2e7d32"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="900" height="780" fill="#ffffff"/>
+  <text x="450" y="30" text-anchor="middle" font-size="20" font-weight="700" fill="#263238">toio_free_fleet アーキテクチャ</text>
+
+  <!-- domain panels -->
+  <rect x="40" y="52" width="660" height="212" rx="10" fill="#f3e5f5" opacity="0.45"/>
+  <text x="56" y="74" font-size="13" font-weight="600" fill="#6a1b9a">RMF 側  (ROS_DOMAIN_ID = 55)</text>
+
+  <rect x="40" y="300" width="660" height="246" rx="10" fill="#e0f2f1" opacity="0.45"/>
+  <text x="56" y="322" font-size="13" font-weight="600" fill="#00695c">cube 側  (ROS_DOMAIN_ID = 0)</text>
+
+  <!-- Open-RMF core -->
+  <rect x="180" y="84" width="380" height="64" rx="8" fill="#ede7f6" stroke="#5e35b1" stroke-width="2"/>
+  <text x="370" y="110" text-anchor="middle" font-size="15" font-weight="700" fill="#4527a0">Open-RMF コア</text>
+  <text x="370" y="131" text-anchor="middle" font-size="12" fill="#5e35b1">traffic schedule / task dispatcher / 経路計画・交通管理</text>
+
+  <!-- free_fleet_adapter -->
+  <rect x="180" y="196" width="380" height="64" rx="8" fill="#fff3e0" stroke="#ef6c00" stroke-width="2"/>
+  <text x="370" y="222" text-anchor="middle" font-size="15" font-weight="700" fill="#e65100">free_fleet_adapter</text>
+  <text x="370" y="243" text-anchor="middle" font-size="12" fill="#ef6c00">Nav2RobotAdapter × N  (改造なし / navigation_stack: 2)</text>
+
+  <!-- zenoh layer -->
+  <rect x="180" y="332" width="380" height="64" rx="8" fill="#eceff1" stroke="#546e7a" stroke-width="2"/>
+  <text x="370" y="358" text-anchor="middle" font-size="15" font-weight="700" fill="#37474f">zenoh-bridge-ros2dds  +  zenohd</text>
+  <text x="370" y="379" text-anchor="middle" font-size="12" fill="#546e7a">DDS ↔ Zenoh 変換 (CDR 自前実装は不要)</text>
+
+  <!-- client -->
+  <rect x="180" y="444" width="380" height="64" rx="8" fill="#e8f5e9" stroke="#2e7d32" stroke-width="2"/>
+  <text x="370" y="470" text-anchor="middle" font-size="15" font-weight="700" fill="#1b5e20">toio_free_fleet_client</text>
+  <text x="370" y="491" text-anchor="middle" font-size="12" fill="#2e7d32">rclpy ノード / MultipleToioCoreCubes / Nav2 互換 facade</text>
+
+  <!-- toio cubes (hardware) -->
+  <rect x="180" y="592" width="380" height="64" rx="8" fill="#e1f5fe" stroke="#0277bd" stroke-width="2"/>
+  <text x="370" y="618" text-anchor="middle" font-size="15" font-weight="700" fill="#01579b">toio コア キューブ × N</text>
+  <text x="370" y="639" text-anchor="middle" font-size="12" fill="#0277bd">ソニーのロボットトイ (ハードウェア)</text>
+
+  <!-- vertical connections (center x=370) -->
+  <line x1="370" y1="148" x2="370" y2="196" stroke="#37474f" stroke-width="2" marker-end="url(#arrow)" marker-start="url(#arrowStart)"/>
+  <text x="380" y="177" font-size="12" fill="#37474f">RMF ↔ fleet adapter</text>
+
+  <line x1="370" y1="260" x2="370" y2="332" stroke="#37474f" stroke-width="2" marker-end="url(#arrow)" marker-start="url(#arrowStart)"/>
+  <text x="380" y="300" font-size="12" font-weight="600" fill="#37474f">Zenoh</text>
+
+  <line x1="370" y1="396" x2="370" y2="444" stroke="#37474f" stroke-width="2" marker-end="url(#arrow)" marker-start="url(#arrowStart)"/>
+  <text x="380" y="425" font-size="12" fill="#37474f">DDS (Nav2 互換 topic / action)</text>
+
+  <line x1="370" y1="508" x2="370" y2="592" stroke="#37474f" stroke-width="2" marker-end="url(#arrow)" marker-start="url(#arrowStart)"/>
+  <text x="380" y="554" font-size="12" font-weight="600" fill="#37474f">BLE</text>
+
+  <!-- toio_free_fleet_rmf side box -->
+  <rect x="724" y="120" width="150" height="160" rx="8" fill="#e8f5e9" stroke="#2e7d32" stroke-width="2"/>
+  <text x="799" y="144" text-anchor="middle" font-size="13" font-weight="700" fill="#1b5e20">toio_free_fleet_rmf</text>
+  <text x="799" y="168" text-anchor="middle" font-size="11" fill="#2e7d32">map / nav_graph</text>
+  <text x="799" y="188" text-anchor="middle" font-size="11" fill="#2e7d32">fleet adapter 設定</text>
+  <text x="799" y="208" text-anchor="middle" font-size="11" fill="#2e7d32">zenoh-bridge 設定</text>
+  <text x="799" y="228" text-anchor="middle" font-size="11" fill="#2e7d32">launch ファイル</text>
+  <text x="799" y="258" text-anchor="middle" font-size="11" font-style="italic" fill="#1b5e20">RMF 側の構成を提供</text>
+
+  <!-- dashed config arrows from rmf assets to core & adapter -->
+  <path d="M724,180 C640,170 600,140 562,120" fill="none" stroke="#2e7d32" stroke-width="1.6" stroke-dasharray="5,4" marker-end="url(#arrowDash)"/>
+  <path d="M724,228 L562,228" fill="none" stroke="#2e7d32" stroke-width="1.6" stroke-dasharray="5,4" marker-end="url(#arrowDash)"/>
+
+  <!-- repo highlight note -->
+  <text x="190" y="478" font-size="0" fill="#000"/>
+
+  <!-- legend -->
+  <text x="56" y="692" font-size="13" font-weight="600" fill="#263238">凡例</text>
+  <rect x="56" y="704" width="16" height="16" rx="3" fill="#e8f5e9" stroke="#2e7d32" stroke-width="2"/>
+  <text x="80" y="717" font-size="12" fill="#263238">本リポジトリ (toio_free_fleet)</text>
+  <rect x="300" y="704" width="16" height="16" rx="3" fill="#fff3e0" stroke="#ef6c00" stroke-width="2"/>
+  <text x="324" y="717" font-size="12" fill="#263238">free_fleet (upstream)</text>
+  <rect x="500" y="704" width="16" height="16" rx="3" fill="#ede7f6" stroke="#5e35b1" stroke-width="2"/>
+  <text x="524" y="717" font-size="12" fill="#263238">Open-RMF コア</text>
+  <rect x="56" y="730" width="16" height="16" rx="3" fill="#e1f5fe" stroke="#0277bd" stroke-width="2"/>
+  <text x="80" y="743" font-size="12" fill="#263238">toio ハードウェア</text>
+  <rect x="300" y="730" width="16" height="16" rx="3" fill="#eceff1" stroke="#546e7a" stroke-width="2"/>
+  <text x="324" y="743" font-size="12" fill="#263238">Zenoh ブリッジ</text>
+</svg>
