@@ -15,8 +15,14 @@ rmf_fleet:
     linear: [0.7, 1.0]    # velocity, acceleration (m/s, m/s^2)
     angular: [1.0, 2.0]   # velocity, acceleration (rad/s, rad/s^2)
   profile:
-    footprint: 1.25       # radius in m (cube body 31.8 mm * 50 = 1.59 m; rounded down)
-    vicinity:  2.50
+    # radii in m. The cube body is 31.8 mm square; at the x50 world scale that
+    # is a 1.59 m square, so the body radius (inscribed circle, half a side) is
+    # 31.8/2 mm * 50 = 0.795 m. (The old 1.25 wrongly used the 1.59 m *side* as
+    # a radius, doubling the footprint.) vicinity is footprint + a small
+    # clearance, kept below the ~1.2 m minimum waypoint spacing so two cubes can
+    # still occupy adjacent waypoints instead of mutually blocking.
+    footprint: 0.80
+    vicinity:  1.20
   reversible: False  # toio always rotates to face its target then drives forward (motor_control_target Linear); it never reverses
   battery_system:
     voltage: 3.7
