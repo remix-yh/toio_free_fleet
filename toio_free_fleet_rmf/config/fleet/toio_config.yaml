@@ -54,6 +54,12 @@ rmf_fleet:
       charger: "toio_0_charger"
       responsive_wait: False
       navigation_stack: 2
+      # Bound the blocking get_result zenoh query in Nav2RobotAdapter's
+      # _is_navigation_done. Left unset (None) it blocks for zenoh's default
+      # (~10 s) whenever the feedback fast-path lapses (e.g. each time a cube
+      # reaches a waypoint), freezing the robot's pose updates and the next
+      # move command. 1.0 s matches the free_fleet nav2 single-robot example.
+      service_call_timeout_sec: 1.0
       init_timeout_sec: 10
       initial_map: "L1"
       map_frame: "map"
@@ -67,6 +73,7 @@ rmf_fleet:
       charger: "toio_1_charger"
       responsive_wait: False
       navigation_stack: 2
+      service_call_timeout_sec: 1.0  # see cube_0
       init_timeout_sec: 10
       initial_map: "L1"
       map_frame: "map"
