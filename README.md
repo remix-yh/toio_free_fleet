@@ -3,6 +3,12 @@
 [Open-RMF](https://github.com/open-rmf/rmf) の [`free_fleet`](https://github.com/open-rmf/free_fleet) を使って、
 ソニーの [toio コア キューブ](https://toio.io/) を Open-RMF に接続するためのリポジトリです。
 
+## デモ
+
+<video src="https://github.com/remix-yh/toio_free_fleet/raw/main/docs/toio_rmf.mp4" controls muted loop width="720"></video>
+
+> 再生されない場合は [`docs/toio_rmf.mp4`](docs/toio_rmf.mp4) を参照してください。
+
 ## アーキテクチャ
 
 ![toio_free_fleet アーキテクチャ図](docs/architecture.svg)
