@@ -131,7 +131,7 @@ source ~/ff_ws/install/setup.bash
 export ROS_DOMAIN_ID=55
 
 ros2 run rmf_demos_tasks dispatch_patrol \
-  -p st_1 st_2 -n 3 --use_sim_time false
+  -p st_1 st_2 -n 3
 ```
 
 `st_1` 等は `toio_map.building.yaml` で打った頂点名と合わせます。
