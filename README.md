@@ -5,9 +5,7 @@
 
 ## デモ
 
-<video src="https://github.com/remix-yh/toio_free_fleet/raw/main/docs/toio_rmf.mp4" controls muted loop width="720"></video>
-
-> 再生されない場合は [`docs/toio_rmf.mp4`](docs/toio_rmf.mp4) を参照してください。
+https://github.com/user-attachments/assets/1b1b120d-3479-40e3-b2a7-31eff96a6f24
 
 ## アーキテクチャ
 
