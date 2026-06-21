@@ -45,6 +45,18 @@ _DEFAULT_LED_PALETTE: list[tuple[int, int, int]] = [
     (0xFF, 0xFF, 0x00),
 ]
 
+# Upper bounds on shutdown teardown. The toio/bleak disconnect has unbounded
+# `while is_connected` retry loops; without caps a wedged BLE stack would keep
+# the process alive past the launch system's SIGTERM->SIGKILL window, which
+# itself leaves the cube connected -- the very state we are trying to avoid.
+# Keep the sum well under launch's ~5 s SIGINT grace so we exit cleanly.
+MOTOR_STOP_TIMEOUT_S = 1.5
+# A connected `bluetoothctl disconnect` blocks ~2-2.6 s; we run cubes in
+# parallel, so this caps the whole disconnect step, not per cube.
+BLE_DISCONNECT_TIMEOUT_S = 4.0
+# Timeout for the bluetoothctl calls used to purge stale connections at startup.
+_BLUETOOTHCTL_TIMEOUT_S = 5.0
+
 
 @dataclass
 class RobotSpec:
@@ -107,6 +119,9 @@ class CubeManager:
 
     async def __aenter__(self) -> 'CubeManager':
         """Scan for the configured cube IDs, connect, and prime each cube."""
+        # A cube left connected by a previous run won't advertise, so the scan
+        # below would never find it. Drop any such stale link first.
+        await self._purge_stale_connections()
         wanted_ids = {r.cube_id for r in self.robots}
         scanner = UniversalBleScanner()
         infos = await scanner.scan_with_id(
@@ -176,10 +191,116 @@ class CubeManager:
         return self
 
     async def __aexit__(self, exc_type, exc, tb) -> None:
-        """Stop all cubes and tear down BLE connections."""
-        await self.stop_all()
-        if self._cubes_ctx is not None:
-            await self._cubes_ctx.__aexit__(exc_type, exc, tb)
+        """Stop motors, then force every cube to disconnect at the BlueZ level.
+
+        We deliberately bypass toio-py's MultipleToioCoreCubes.disconnect():
+        bleak >= 1.0 changed BleakClient.connect() to return None instead of
+        True, and toio-py stores that in BleCube.connected, so its disconnect()
+        short-circuits to a silent no-op that never drops the link (and when
+        forced past that, it hangs on an unbounded `while is_connected` loop).
+        That broken path is exactly what left cubes connected after exit. A
+        direct `bluetoothctl disconnect` is reliable and fast on the project's
+        BlueZ target.
+
+        Each step is independently guarded and time-bounded: a failed motor
+        stop must not skip the disconnect, and neither may outlive the launch
+        system's shutdown grace (or we get SIGKILLed mid-teardown, leaving the
+        cube connected -- the very state we're avoiding).
+        """
+        # Stop motors first, while the link is still up, so a cube can't keep
+        # driving on its last command after we drop the connection.
+        try:
+            await asyncio.wait_for(self.stop_all(), timeout=MOTOR_STOP_TIMEOUT_S)
+        except Exception as e:
+            print(f'[{self.fleet_name}] motor stop during shutdown failed '
+                  f'({type(e).__name__}: {e}); continuing to disconnect')
+        try:
+            await asyncio.wait_for(
+                self._force_disconnect_matching(), timeout=BLE_DISCONNECT_TIMEOUT_S
+            )
+        except Exception as e:
+            print(f'[{self.fleet_name}] BlueZ disconnect during shutdown failed '
+                  f'({type(e).__name__}: {e})')
+
+    async def _purge_stale_connections(self) -> None:
+        """Drop BlueZ-level links to our cubes left over from a prior run.
+
+        If a previous process died before it could disconnect (SIGKILL, crash,
+        or a wedged teardown), BlueZ keeps the cube marked connected. A
+        connected cube stops advertising, so the next scan can't find it and
+        connect() fails -- the "won't reconnect until I power-cycle the cube"
+        symptom. Force a disconnect on any cube BlueZ still reports as connected
+        before we scan.
+        """
+        if await self._force_disconnect_matching():
+            # Give BlueZ a moment to start seeing the cube advertise again.
+            await asyncio.sleep(1.0)
+
+    async def _force_disconnect_matching(self) -> int:
+        """bluetoothctl-disconnect every connected device that is one of ours.
+
+        Matches BlueZ's connected list against the configured cube_ids by name
+        and force-drops each link. Reliable regardless of the bleak/toio
+        disconnect bug; scoped to the project's Ubuntu 24.04 + BlueZ setup.
+        Returns the number of cubes disconnected.
+        """
+        wanted_ids = [r.cube_id for r in self.robots]
+        targets = [
+            (mac, name)
+            for mac, name in await self._bluetoothctl_connected_devices()
+            if any(cid in name for cid in wanted_ids)
+        ]
+        for mac, name in targets:
+            print(f'[{self.fleet_name}] force-disconnecting {name} ({mac})')
+        # Disconnect in parallel: a connected disconnect blocks ~2 s each, so
+        # serial calls would blow the shutdown budget for more than one cube.
+        # _bluetoothctl_disconnect swallows its own errors, so gather won't raise.
+        await asyncio.gather(
+            *(self._bluetoothctl_disconnect(mac) for mac, _ in targets)
+        )
+        return len(targets)
+
+    @staticmethod
+    async def _run_bluetoothctl(*args: str) -> str:
+        """Run ``bluetoothctl <args>`` one-shot and return its stdout."""
+        proc = await asyncio.create_subprocess_exec(
+            'bluetoothctl', *args,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        try:
+            stdout, _ = await asyncio.wait_for(
+                proc.communicate(), timeout=_BLUETOOTHCTL_TIMEOUT_S
+            )
+        except asyncio.TimeoutError:
+            proc.kill()
+            await proc.wait()
+            raise
+        return stdout.decode(errors='replace')
+
+    async def _bluetoothctl_connected_devices(self) -> list[tuple[str, str]]:
+        """Return ``(mac, name)`` for every device BlueZ reports as connected."""
+        try:
+            out = await self._run_bluetoothctl('devices', 'Connected')
+        except Exception as e:
+            print(f'[{self.fleet_name}] could not list BlueZ connections '
+                  f'({type(e).__name__}: {e}); skipping stale-connection purge')
+            return []
+        devices: list[tuple[str, str]] = []
+        for line in out.splitlines():
+            # "Device AA:BB:CC:DD:EE:FF toio Core Cube-N7D"
+            parts = line.strip().split(maxsplit=2)
+            if len(parts) >= 3 and parts[0] == 'Device':
+                devices.append((parts[1], parts[2]))
+        return devices
+
+    async def _bluetoothctl_disconnect(self, mac: str) -> None:
+        """Force BlueZ to drop the link to ``mac`` (best-effort)."""
+        try:
+            await self._run_bluetoothctl('disconnect', mac)
+        except Exception as e:
+            print(f'[{self.fleet_name}] disconnect {mac} failed '
+                  f'({type(e).__name__}: {e})')
 
     async def stop_all(self) -> None:
         """Best-effort motor stop for every connected cube."""

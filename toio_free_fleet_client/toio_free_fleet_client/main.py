@@ -30,7 +30,7 @@ import threading
 from pathlib import Path
 
 import rclpy
-from rclpy.executors import MultiThreadedExecutor
+from rclpy.executors import ExternalShutdownException, MultiThreadedExecutor
 from rclpy.utilities import remove_ros_args
 from toio import SpeedChangeType
 import yaml
@@ -131,7 +131,11 @@ def main() -> int:
         except asyncio.CancelledError:
             pass
 
-    loop_thread = threading.Thread(target=_run_loop, name='ble-loop', daemon=False)
+    # daemon=True so a wedged BLE disconnect (the toio/bleak stack has unbounded
+    # is_connected wait loops) can never block interpreter exit. We still join
+    # with a timeout below to give a clean disconnect its chance; only a genuine
+    # hang falls through, and the next run's stale-connection purge recovers.
+    loop_thread = threading.Thread(target=_run_loop, name='ble-loop', daemon=True)
     loop_thread.start()
 
     # Wait for the BLE side to finish connecting before we expose ROS topics.
@@ -151,13 +155,32 @@ def main() -> int:
 
     try:
         executor.spin()
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, ExternalShutdownException):
+        # SIGINT/SIGTERM from `ros2 launch` teardown. rclpy installs handlers
+        # for both signals by default; either shuts the context and unblocks
+        # spin here (KeyboardInterrupt for SIGINT, ExternalShutdownException
+        # once the context is already down).
         pass
     finally:
-        node.destroy_node()
-        rclpy.shutdown()
+        # Tear down BLE FIRST and wait for the disconnect to finish: a clean
+        # disconnect is what lets the cubes be found and reconnected next run.
+        # Do it before ROS teardown so an error destroying the node can't skip
+        # it. The join timeout exceeds CubeManager's own teardown budget
+        # (motor stop + disconnect) with margin.
         asyncio_loop.call_soon_threadsafe(shutdown.set)
-        loop_thread.join(timeout=5.0)
+        loop_thread.join(timeout=6.0)
+        if loop_thread.is_alive():
+            node.get_logger().warn(
+                'BLE teardown did not finish in time; a connection may be '
+                'left stale (the next run purges it before reconnecting)'
+            )
+        try:
+            executor.remove_node(node)
+            node.destroy_node()
+        except Exception:
+            pass
+        if rclpy.ok():
+            rclpy.shutdown()
     return 0
 
 
